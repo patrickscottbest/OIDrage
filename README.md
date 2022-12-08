@@ -9,8 +9,8 @@ I needed a setup to mimic 15,000 datapoints for a cacti installation.  The inten
 
 - delayed response (in ms, default 15, recommended 100 for WAN emulation) 
 - OID tree characteristics 
-- - depth of OID tree (in layers)
-- - length of OID response (in bytes, b(response:answer)) 
+  - depth of OID tree (in layers)
+  - length of OID response (in bytes, b(response:answer)) 
 - response types (GUAGE/COUNTER64/STRING)
 - Loopback style (127.0.0.1 | integer16_increment_from_.1)
 - Port style (514 | integer16_increment_from_514)
@@ -19,7 +19,9 @@ I needed a setup to mimic 15,000 datapoints for a cacti installation.  The inten
 A python script designed to make use of raw UDP port message and answer.
 
 # Implementation
-Python script will be built to run on a singular host, binding to 127.0.0.1 on standard port 514.
-A prep-script will accompany that will configure a system for multiple loopback interfaces.
-Other 
+Python script can run on a singular host, default binding to 127.0.0.1 on standard port 514.
+
+# Future
+Prep script for system config, multiple loopback interfaces and systemctl control parameters if needed.
+
 
