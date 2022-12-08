@@ -5,7 +5,11 @@ A lightweight SNMP server for testing purposes.  Sends very limited responses of
 20221208 - Initiate Project - Complimentery to https://github.com/patrickscottbest/hammerOID
 
 # About OIDrage
-I needed a setup to mimic 15,000 datapoints for a cacti installation.  The intention is to allow various configuration inputs such as: 
+A quick setup to mimic thousands datapoints for a real cacti installation.  This software is designed to be raw, quick, and not feature bloated for mimicing real world load testing and KPI evaluations.  The regular PySNMP libraries are not required.  This software is stand-alone.
+
+
+# Config Inputs and Styling
+Allows various configuration inputs
 
 - delayed response (in ms, default 15, recommended 100 for WAN emulation) 
 - OID tree characteristics 
@@ -16,10 +20,10 @@ I needed a setup to mimic 15,000 datapoints for a cacti installation.  The inten
 - Port style (514 | integer16_increment_from_514)
 
 
-A python script designed to make use of raw UDP port message and answer.
-
 # Implementation
 Python script can run on a singular host, default binding to 127.0.0.1 on standard port 514.
+Values returned are static.
+A python script designed to make use of raw UDP port message and answer .
 
 # Future
 Prep script for system config, multiple loopback interfaces and systemctl control parameters if needed.
