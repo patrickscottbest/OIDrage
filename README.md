@@ -7,7 +7,6 @@ A lightweight SNMP server for testing purposes.  Sends very limited responses of
 # About OIDrage
 A quick setup to mimic thousands datapoints for a real cacti installation.  This software is designed to be raw, quick, and not feature bloated for mimicing real world load testing and KPI evaluations.  The regular PySNMP libraries are not required.  This software is stand-alone.
 
-
 # Config Inputs and Styling
 Allows various configuration inputs
 
@@ -18,7 +17,6 @@ Allows various configuration inputs
 - response types (GUAGE/COUNTER64/STRING)
 - Loopback style (127.0.0.1 | integer16_increment_from_.1)
 - Port style (514 | integer16_increment_from_514)
-
 
 # Implementation
 Python script can run on a singular host, default binding to 127.0.0.1 on standard port 514.
