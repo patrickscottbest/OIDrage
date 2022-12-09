@@ -6,6 +6,7 @@
 # UDP Comm https://wiki.python.org/moin/UdpCommunication#CA-60759983b77d9e5650a253e88b9ac4b5e607d69c_3
 # SNMP RFCs https://datatracker.ietf.org/doc/html/rfc1906#section-8
 
+
 # RECEIVING 
 
 import socket
@@ -19,14 +20,29 @@ sock.bind((UDP_IP, UDP_PORT))
 
 while True:
     data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
-    print("received message: %s" % data)
+    print("received message: string: %s" % data)
+    #":".join("{:02x}".format(ord(c)) for c in data)
+    print(type(data))
+    enriched = data.hex().upper()
 
+    here = 1
+    for digit in enriched: 
+        if here % 3 == 0:
+            print(digit + " ")
+        else:
+            print(digit.strip())
+        here += 1
+
+        
 
 
 ### Example get-next-request
-#        <---------> First four unknown
-#                    <> version
-#                       <---> demarc
+#        <> unknown, always 30
+# #        <> 0x34 (48)bytes to follow in this SNMP request 
+#              <---> demarc 02 01
+#                    <> version 
+#                       <> demarc 04
+#                          <> 0x06 (6)bytes to follow containing community string
 #                             <---------------> "public"
 #                                               <---> demarc
 #                                                     <- data get-next-request(1) demarc
@@ -41,19 +57,19 @@ while True:
 #                                      <> error index
 #                                         <---> dmarc
 #                                               <---> variable binding , 1 item
-#                                                     <- demarc
+#                                                     <> demarc
 # 0010   04 27 59 8f 30 02 01 00 02 01 00 30 19 30 17 06   .'Y.0......0.0..
 
-#        -> variable binding, 1 item ctd.
+
+#        <> bytes to follow including trailing dmarc, 8bit, 0x13 (19) bytes until end. 
 #           <------------------------------------------- object name (OID 1.3.6.1.6.3.16.1.5.2.1.6.5.95.97.108.108.95.1.1 )   
-#           <> meaning 1.3 though i dont know how.
-#              <---------> meaning .6.1.6.3.
-#                          <> meaning .16. (@16bit)
-#                             <-------------------------> meaning .1.5.2.1.6.5.96.97.108.
+#           <> meaning 1.3. though i dont know how.
+#              <---------> meaning .6.1.6.3. (@4bit)
+#                          <> meaning .16. (@8bit)
+#                             <-------------------------> meaning .1.5.2.1.6.5.96.97.108. (@8bit)
 #
 # 0020   13 2b 06 01 06 03 10 01 05 02 01 06 05 5f 61 6c   .+..........._al
 
-#
 #        ----------> object name (FINAL)
 #        <---------> meaning .108.95.1.1
 #                    <---> demarc
