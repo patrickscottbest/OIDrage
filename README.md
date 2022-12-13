@@ -38,6 +38,10 @@ Prep script for system config, multiple loopback interfaces and systemctl contro
 
 Understanding the OIDs took a lot of investigation.  OIDs are variable-length and there is a flag and mathematical formula used to calculate them as the OID OBJECT_NAME is examined.  This means there are ranges of OIDs that simply can't exist.
 
+
+Great breakdowns and images of actual byte sequences.  https://www.ranecommercial.com/legacy/note161.html
+
+
 https://learn.microsoft.com/en-us/windows/win32/seccertenroll/about-object-identifier?redirectedfrom=MSDN
 
 
