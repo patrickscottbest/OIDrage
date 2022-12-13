@@ -202,7 +202,8 @@ def extract_request_details(data):
 
     return community
 
-
+def end_of_mib():
+    pass
 
 while True:
     data, addr = sock.recvfrom(1460) # buffer size is 1024 bytes
@@ -223,11 +224,18 @@ while True:
         request_id, oid_requested = extract_request_details(data)
 
         
-        # search the tree elements for a dict for a direct match.  If no match, determine the start point, level by level.
+        # search the tree elements for a dict for a direct match.  If found, simply pass the next element of the tree.
         tree_cursor = 0
         for t in range(0,len(tree)):
             if tree[t]['oid_hex'] == oid_requested:
-                print(f"DING DING DING at position {t}")
+                print(f"Direct OID match at branch position {t}. ")
+                if t == (len(tree) - 1):
+                    # there's nothing left.  Send back EndOfMib
+                    print("sending EndOfMib")
+                    end_of_mib()
+                else:
+                    print(f"sending Valid Response based on {t + 1} {tree[t+1]}")
+
                 tree_cursor = t
         
         if tree_cursor == 0:
@@ -241,7 +249,7 @@ while True:
         
             game_on = True
             
-            print('playing game now')
+            print('Could not find direct match.  Searching for closest branch.')
             # compare the requested OID bytes with branch's bytes to the maximum depth of the first part of the matched bytes.
             while game_on:
 
@@ -263,7 +271,7 @@ while True:
                         break
 
                 if matches > high_score:
-                    print(f'matches breaks highscore of {high_score} with cursor position of {tree_cursor} and new high of {matches}')
+                    #print(f'matches breaks highscore of {high_score} with cursor position of {tree_cursor} and new high of {matches}')
                     high_score = matches
                     high_score_cursor = tree_cursor
                 elif matches < high_score:
@@ -277,17 +285,56 @@ while True:
 
             print(f'ROUND ONE')
             print(f'Best match depth: {high_score} at tree cursor position {high_score_cursor}')
-            print(f'Record before the match is {tree[high_score_cursor]}')
-            print(f'Last record is {tree[len(tree)-1]}')
-            
-            # If the next cursor would be beyond the end of the dict, formulate a "endOfMibView"
-            if high_score_cursor == len(tree):
+            print(f'Record before the match is {tree[high_score_cursor - 1]}')
+            print(f'Match record is {tree[high_score_cursor]}')
+            #print(f'Last record is {tree[len(tree)-1]}')
+
+            ## ROUND 2 , unfinished business.
+            # check the very next record again.  If it's matches are lower, then forget it, we've got a winner.
+
+            # if not, then we need to start evaluating the next "branch" for when the value is the next highest.
+
+
+            # If the next tree entry would be beyond the end of the dict, formulate a "endOfMibView"
+            if high_score_cursor == (len(tree) -1) :
                 print("This is the EndOfMibView")
+                end_of_mib()
+
+            elif high_score == len(oid_requested):
+                # The length of the requested oid lends to no further examination.
+                print(f'The return record will be tree element {high_score_cursor}.')
+
             else:
-                print("Need to now sort out the next octet")
+                # the tree_cursor is one behind the possible target branch.  
+                # Let's see if the next branch is even in the ballpark with the requested OID prefix.
+                
+                print("Examining the non-matching byte branch")
 
+                game_on = True
+                while game_on: 
+                    
+                    ballpark = True
+                    for b in range(0,matches-1):
+                        if oid_requested[b] != tree[high_score_cursor + 1]['oid_hex'][b]:
+                            ballpark = False
+                            # fallthrough
 
+                    if not ballpark: 
+                        print(f'The return record will be tree element {high_score_cursor}.')
+                    else:
+                        
+                        print(f'Proceeding with scoring against element {high_score_cursor + 1}')
+                        
+                        if oid_requested[matches] > tree[high_score_cursor + 1]['oid_hex'][matches]:
+                            print(f'the requested OID byte is greater than this, we have a new champ')
+                            high_score_cursor +=1 
+                        else: 
+                            print(f'the requested OID byte is less than this.  We have the final next record.')
+                            game_on = False
+                # end game on
 
+                print(f'the next record to hand back is tree element {high_score_cursor+1}.  {tree[high_score_cursor+1]}')
+        
 
     except Exception as e:
         print(f'Exception: {e}')
