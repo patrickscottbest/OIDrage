@@ -101,6 +101,141 @@ def get_tree_dict(Line):
     return {"oid_string": oid_string, "oid_hex": oid_hex, "oid_type": oid_type, "oid_value": oid_value}
 
 
+def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
+    # returns a prepared byte object for a non-final response to an SNMPwalk
+    
+    # assign OID type
+    OID_type_lookup = {
+        "OctetString": 0x04 , 
+        "INTEGER": 0x02, 
+        "null": 0x05, 
+        "OID": 0x06,
+        "Counter32": 0x41,
+    }
+    OID_type = OID_type_lookup[oid_type]  # based on string search
+
+    
+    # Initialise lengths to be built from the bottom up.
+    print("Initialise lengths")
+    length_all = 0x0
+    length_community = 0x0
+    length_to_end1_response = 0x0
+    length_to_end2_bindings = 0x0
+    length_to_end3_binding_one = 0x0 
+    length_to_end4_value = 0x0 
+    
+    ### LENGTHS ###
+    ### LENGTHS ###
+    ### LENGTHS ###
+
+    # Encrich lengths from bottom up.
+    running_total = 0
+    
+    # OID value is the last thing
+    if isinstance(oid_value, int):
+        value_mod = oid_value.bit_length() % 8
+        print(f'mod {value_mod}')
+        value_floor = oid_value.bit_length() // 8
+        print(f'value floor {value_floor}')
+        if value_mod > 0:
+            running_total += (value_floor + 1)
+        else: 
+            running_total += value_floor
+    elif isinstance(oid_value, str):
+        running_total += len((oid_value))
+        #... etc
+
+    length_to_end4_value = running_total  # length of value bytes
+    running_total += 2  # length byte and demarc placeholder
+
+    running_total += len(oid_hex)
+    length_to_end3_binding_one = len(oid_hex)  # length of the OID to follow
+    running_total += 1  # length byte and demarc placeholder
+    
+    running_total += 1  # binding number one 0x06
+
+    length_to_end2_bindings += running_total # length of variable-bindings bytes remaining
+    running_total += 1  # length byte placeholder 
+    running_total += 1  # variable-bindings 0x30
+
+    running_total += 1  # length byte placeholder 
+    running_total += 1  # variable-bindings 0x30
+
+    running_total += 6  # error overhead
+
+    running_total += 4  # request ID 
+    running_total += 2  # request ID preamble
+
+    length_to_end1_response += running_total
+    running_total += 1  # length byte placeholder 
+
+    running_total += 1  # RESPONSE
+
+    running_total += len(community)
+    length_community = len(community)
+    running_total += 1  # demarc, length byte placeholder  
+    running_total += 2  # demarc version 0x02, 0x01
+
+    running_total += 2  #  i need 2 more to make it work and i don't know exactly i'm going wrong.....  
+
+    length_all = running_total
+    # length byte placeholder, does not count
+    # 0x30 , start, does not count
+
+    print(f'Running total of response size: {running_total}')
+
+    ### FILL ###
+    ### FILL ###
+    ### FILL ###
+
+    # Fill the template
+    datafill = bytearray()
+    print('initialised byte array')
+    datafill.append(0x30)  # 1 byte, start. 
+    datafill.append(length_all)  # 1 byte, length to end
+    
+    datafill.append(0x02)  # demarc, version
+    datafill.append(0x01)  # demarc, length 01
+    datafill.append(0x01)  # demarc, version 01
+
+    datafill.append(0x04)  # community demarc 04
+    datafill.append(length_community) # 1 byte, length to end of string
+    datafill.extend(community.encode('latin-1'))  # variable, eg. public
+
+
+    datafill.append(0xA2)  # indicates RESPONSE, A1 is get 
+    datafill.append(length_to_end1_response)  # length of RESPONSE bytes remaining entirely
+    
+    datafill.append(0x02)  # request_id demarc
+    datafill.append(0x04)  # static, to end of request_id
+    datafill.extend(request_id)
+    print(f'request_id:')
+    print_hex_nicely(request_id)
+    datafill.append(0x02)  # no error
+    datafill.append(0x01)  # no error
+    datafill.append(0x00)  # no error
+    datafill.append(0x02)  # error index 0
+    datafill.append(0x01)  # error index 0
+    datafill.append(0x00)  # error index 0
+    datafill.append(0x30)  # variable-bindings
+    datafill.append(length_to_end2_bindings+2)  # length of variable-bindings bytes remaining
+    datafill.append(0x30)  # variable-bindings
+    datafill.append(length_to_end2_bindings)  # length of variable-bindings bytes remaining
+    datafill.append(0x06)  # binding number one
+    datafill.append(length_to_end3_binding_one)  # length of the OID to follow
+    datafill.extend(oid_hex)  # variable, the encoded oid bytes, eg 0x2b plus 6.1.2.1...  see RFC spec
+
+    datafill.append(OID_type)  # oid value type - 1 byte, could be Integer32, etc.
+    
+
+    datafill.append(length_to_end4_value)  # length of value bytes remaining
+
+    if isinstance(oid_value, int):
+        datafill.extend(oid_value.to_bytes(length_to_end4_value, 'big'))
+
+    print(f'Datafill As Prepared:')
+    print_hex_nicely(datafill)
+
 tree = []
 count = 0
 problems = 0
@@ -120,7 +255,7 @@ print (f'problems: {problems} total reviewed: {count} tree size: {len(tree)}')
 
 
 UDP_IP = "127.0.0.1"
-UDP_IP = "10.0.1.178"
+UDP_IP = "10.0.1.124"
 UDP_PORT = 5005
 
 sock = socket.socket(socket.AF_INET, # Internet
@@ -139,6 +274,7 @@ def print_hex_nicely(data):
 
         count += 1
     print('')
+
 
 def request_valid(data):
     # Examines that a request is valid and returns BOOL
@@ -192,19 +328,20 @@ def extract_request_details(data):
         print(f'oid_requested:') 
         print_hex_nicely(oid_requested)
 
-        return request_id, oid_requested
+        return community, request_id, oid_requested
 
     except Exception as e:
         print(f'Problem: {e}')
     
-    # request type (right now just walk supported)
-    # requested OID 
+    # # request type (right now just walk supported)
+    # # requested OID 
 
-    return community
+    # return community
 
-def end_of_mib():
+def formulate_end_of_mib():
     pass
 
+# main needs conversion
 while True:
     data, addr = sock.recvfrom(1460) # buffer size is 1024 bytes
     
@@ -221,7 +358,7 @@ while True:
             print("Request is Valid.")
 
         # Extract the peices we need 
-        request_id, oid_requested = extract_request_details(data)
+        community, request_id, oid_requested = extract_request_details(data)
 
         
         # search the tree elements for a dict for a direct match.  If found, simply pass the next element of the tree.
@@ -232,9 +369,11 @@ while True:
                 if t == (len(tree) - 1):
                     # there's nothing left.  Send back EndOfMib
                     print("sending EndOfMib")
-                    end_of_mib()
+                    formulate_end_of_mib()
                 else:
                     print(f"sending Valid Response based on {t + 1} {tree[t+1]}")
+                    formulate_get_response(request_id, community, tree[t+1]['oid_hex'], tree[t+1]['oid_value'], tree[t+1]['oid_type'])
+
 
                 tree_cursor = t
         
@@ -334,7 +473,6 @@ while True:
                 # end game on
 
                 print(f'the next record to hand back is tree element {high_score_cursor+1}.  {tree[high_score_cursor+1]}')
-        
 
     except Exception as e:
         print(f'Exception: {e}')
@@ -347,7 +485,7 @@ while True:
 #           <> 0x34 (48)bytes to follow in this SNMP request 
 #              <---> demarc 02 01
 #                    <> version 
-#                       <> demarc 04
+#                       <> length of comm string 04
 #                          <> 0x06 (6)bytes to follow containing community string
 #                             <---------------> "public"
 #                                               <> demarc a1
