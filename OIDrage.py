@@ -15,6 +15,21 @@ file1 = open('mimic.txt', 'r')
 Lines = file1.readlines()
 
 
+
+def print_hex_nicely(data):
+
+    #print(type(data))
+    count = 1
+    for i in data:
+        if count % 8 == 0:
+            print(f'{i:02X} ')
+        else:
+            print(f'{i:02X} ', end='')
+
+        count += 1
+    print('')
+
+
 def OID_to_hex(oid_string):
     # takes an entire oid string and encodes an SNMP compliant hex chain
 
@@ -104,8 +119,10 @@ def get_tree_dict(Line):
 def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
     # returns a prepared byte object for a non-final response to an SNMPwalk
     
+    print(f'Stored OID_type: {oid_type}.  Pythonic type of oid_value: {type(oid_value)}')
     # assign OID type
     OID_type_lookup = {
+        "Hex-STRING": 0x04 , 
         "OctetString": 0x04 , 
         "INTEGER": 0x02, 
         "null": 0x05, 
@@ -133,6 +150,7 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
     
     # OID value is the last thing
     if isinstance(oid_value, int):
+        # caution, this integer is a 32-bit SIGNED.
         value_mod = oid_value.bit_length() % 8
         print(f'mod {value_mod}')
         value_floor = oid_value.bit_length() // 8
@@ -140,9 +158,10 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
         if value_mod > 0:
             running_total += (value_floor + 1)
         else: 
-            running_total += value_floor
+            running_total += value_floor +1
     elif isinstance(oid_value, str):
-        running_total += len((oid_value))
+        #running_total += len((oid_value))
+        running_total += len(bytes.fromhex(oid_value))
         #... etc
 
     length_to_end4_value = running_total  # length of value bytes
@@ -203,7 +222,7 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
     datafill.extend(community.encode('latin-1'))  # variable, eg. public
 
 
-    datafill.append(0xA2)  # indicates RESPONSE, A1 is get 
+    datafill.append(0xA2)  # indicates RESPONSE, A0 is get-request, A1 is get-next-request , A2 is get_response
     datafill.append(length_to_end1_response)  # length of RESPONSE bytes remaining entirely
     
     datafill.append(0x02)  # request_id demarc
@@ -230,50 +249,19 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
 
     datafill.append(length_to_end4_value)  # length of value bytes remaining
 
+
+
     if isinstance(oid_value, int):
         datafill.extend(oid_value.to_bytes(length_to_end4_value, 'big'))
+    elif isinstance(oid_value, str): 
+        #datafill.extend(oid_value.encode('utf8'))
+        datafill.extend(bytes.fromhex(oid_value))
+    else:
+        print('nope')
 
     print(f'Datafill As Prepared:')
     print_hex_nicely(datafill)
-
-tree = []
-count = 0
-problems = 0
-# Strips the newline character
-for line in Lines:
-    count += 1
-    #print("Importing Line{}: {}".format(count, line.strip()))
-    try:
-        tree.append(get_tree_dict(line))
-    except:
-        print("Problem importing this one.")
-        problems += 1
-
-print (f'problems: {problems} total reviewed: {count} tree size: {len(tree)}')
-#pprint(tree)
-
-
-
-UDP_IP = "127.0.0.1"
-UDP_IP = "10.0.1.124"
-UDP_PORT = 5005
-
-sock = socket.socket(socket.AF_INET, # Internet
-                     socket.SOCK_DGRAM) # UDP
-sock.bind((UDP_IP, UDP_PORT))
-
-def print_hex_nicely(data):
-
-    #print(type(data))
-    count = 1
-    for i in data:
-        if count % 8 == 0:
-            print(f'{i:02X} ')
-        else:
-            print(f'{i:02X} ', end='')
-
-        count += 1
-    print('')
+    return(datafill)
 
 
 def request_valid(data):
@@ -305,16 +293,17 @@ def extract_request_details(data):
             raise Exception
 
         # request ID
-        cursor = 5 + comm_length + 5
+        cursor = 6 + comm_length + 5
 
         request_id = bytearray(4)
         for i in range(0,4):
             request_id[i] = data[cursor + i]
-        print(f'request_id: {int.from_bytes(request_id, "big")} ({request_id})')
+        print(f'request_id: {int.from_bytes(request_id, "big")}')
+        print_hex_nicely(request_id)
         cursor += 4
 
         # Advance the cursor to the OID length definition, accounting for 11 bytes of unnecessary error codes and index.
-        cursor += 12
+        cursor += 11
 
         # oid_requested
         oid_len = data[cursor]
@@ -338,10 +327,62 @@ def extract_request_details(data):
 
     # return community
 
-def formulate_end_of_mib():
+def formulate_end_of_mib(request_id, community, oid_hex, oid_value, oid_type):
     pass
 
-# main needs conversion
+def get_request_type(data):
+    # Lookahead to determine the type of request.  Need to skep a variable length field to do it (community)
+    # A0get-request A1get-next-request A2get-response
+
+    print('getting request type')
+
+    #cursor skips to variable-length-integer-byte 
+    cursor = 0 
+    cursor += 6  # the 6th byte is the value we also want
+
+    communitylength = data[cursor]
+    print(f'communitylength is {communitylength}')
+    cursor += communitylength
+
+    request_type = data[cursor + 1]  # the very next byte has the answers.
+    print(f'request type determined to be {hex(request_type)}')
+    return request_type
+
+
+    
+
+## OID Tree Construction 
+tree = []
+count = 0
+problems = 0
+# Strips the newline character
+for line in Lines:
+    count += 1
+    #print("Importing Line{}: {}".format(count, line.strip()))
+    try:
+        tree.append(get_tree_dict(line))
+    except:
+        print("Problem importing this one.")
+        problems += 1
+
+print (f'problems: {problems} total reviewed: {count} tree size: {len(tree)}')
+#pprint(tree)
+
+
+### Open a UDP socket
+
+UDP_IP = "127.0.0.1"   # this will be the default.
+UDP_IP = "10.0.1.124"  # test wired
+UDP_IP = "10.0.1.178"  # test wireless
+UDP_PORT = 5005
+
+sock = socket.socket(socket.AF_INET, # Internet
+                     socket.SOCK_DGRAM) # UDP
+sock.bind((UDP_IP, UDP_PORT))
+
+
+##  Listen for a request and respond.
+
 while True:
     data, addr = sock.recvfrom(1460) # buffer size is 1024 bytes
     
@@ -357,122 +398,103 @@ while True:
         else:
             print("Request is Valid.")
 
-        # Extract the peices we need 
+        # Extract the artifacts we need to construct a response
         community, request_id, oid_requested = extract_request_details(data)
 
         
-        # search the tree elements for a dict for a direct match.  If found, simply pass the next element of the tree.
+        # Direct Match Shortcut
         tree_cursor = 0
         for t in range(0,len(tree)):
+            #search the tree elements for a dict for a direct match. 
             if tree[t]['oid_hex'] == oid_requested:
                 print(f"Direct OID match at branch position {t}. ")
                 if t == (len(tree) - 1):
                     # there's nothing left.  Send back EndOfMib
                     print("sending EndOfMib")
-                    formulate_end_of_mib()
+                    formulate_end_of_mib(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
                 else:
-                    print(f"sending Valid Response based on {t + 1} {tree[t+1]}")
-                    formulate_get_response(request_id, community, tree[t+1]['oid_hex'], tree[t+1]['oid_value'], tree[t+1]['oid_type'])
+                    
+                    # determine request type
+                    
+                    request_type = get_request_type(data)
+                    if request_type == 0xA0:  # get-request
+                        print("get-request received")
+                        datafill = formulate_get_response(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
+                        print(f"sending Valid Response based on element {t} {tree[t]}")
+                    elif request_type == 0xa1:  # get-next-request
+                        print("get-next-request received ")
+                        
 
+                        # evaulate the next for a prefix match.... 
+                        # even if it's not the same prefix,a bogus result is presented and I witnessed the LINUX client followup with a get-request for that exact OID.
+                        
+                        datafill = formulate_get_response(request_id, community, tree[t+1]['oid_hex'], tree[t+1]['oid_value'], tree[t+1]['oid_type'])
+                        print(f"sending Valid Response based on element {t+1} {tree[t+1]}")
+
+                    else: 
+                        print("Incorrect request_type")
+                        raise Exception("problem with request_type")
+                    
+                    # Sending a reply to client
+                    sock.sendto(datafill, addr)
 
                 tree_cursor = t
         
+
+        # First Full-Prefix Match Search
+        # we need a full prefix match.
+
         if tree_cursor == 0:
             
             # we couldn't find a direct match... time to get fancy and find the next best thing.
             # the match should be closest to the top of the tree as possible.
 
             len_oid_requested = len(oid_requested)
-            high_score = 0
-            high_score_cursor = 0
         
             game_on = True
             
-            print('Could not find direct match.  Searching for closest branch.')
+            print('Could not find direct match.  Sub searching for closest branch.')
+            
             # compare the requested OID bytes with branch's bytes to the maximum depth of the first part of the matched bytes.
             while game_on:
 
                 # figure out how many bytes deep this comparison will be.
                 len_oid_branch = len(tree[tree_cursor]['oid_hex'])
                 if len_oid_branch < len_oid_requested:
-                    compare_depth = len_oid_branch
+                    # we don't want this record then.
+                    # clearly not a match
+                    pass
+                    print('length of branch is less than request.')
+
                 else:
-                    compare_depth = len_oid_requested
-
-                # roll through the bytes sequentially and see how many matched bytes we have 
-                
-                matches = 0
-                for current_depth in range(0, compare_depth):
-                    
-                    if tree[tree_cursor]['oid_hex'][current_depth] == oid_requested[current_depth]:
-                        matches += 1
-                    else:
-                        break
-
-                if matches > high_score:
-                    #print(f'matches breaks highscore of {high_score} with cursor position of {tree_cursor} and new high of {matches}')
-                    high_score = matches
-                    high_score_cursor = tree_cursor
-                elif matches < high_score:
-                    # we clearly came across a better match before here.  
-                    game_on = False
-                
-                if tree_cursor == (len(tree) - 1):
-                    game_on = False
-                else:
-                    tree_cursor += 1
-
-            print(f'ROUND ONE')
-            print(f'Best match depth: {high_score} at tree cursor position {high_score_cursor}')
-            print(f'Record before the match is {tree[high_score_cursor - 1]}')
-            print(f'Match record is {tree[high_score_cursor]}')
-            #print(f'Last record is {tree[len(tree)-1]}')
-
-            ## ROUND 2 , unfinished business.
-            # check the very next record again.  If it's matches are lower, then forget it, we've got a winner.
-
-            # if not, then we need to start evaluating the next "branch" for when the value is the next highest.
-
-
-            # If the next tree entry would be beyond the end of the dict, formulate a "endOfMibView"
-            if high_score_cursor == (len(tree) -1) :
-                print("This is the EndOfMibView")
-                end_of_mib()
-
-            elif high_score == len(oid_requested):
-                # The length of the requested oid lends to no further examination.
-                print(f'The return record will be tree element {high_score_cursor}.')
-
-            else:
-                # the tree_cursor is one behind the possible target branch.  
-                # Let's see if the next branch is even in the ballpark with the requested OID prefix.
-                
-                print("Examining the non-matching byte branch")
-
-                game_on = True
-                while game_on: 
-                    
-                    ballpark = True
-                    for b in range(0,matches-1):
-                        if oid_requested[b] != tree[high_score_cursor + 1]['oid_hex'][b]:
-                            ballpark = False
-                            # fallthrough
-
-                    if not ballpark: 
-                        print(f'The return record will be tree element {high_score_cursor}.')
-                    else:
+                    #print('length of branch is more or equal to request.')
+                    # roll through the bytes sequentially and see how many matched bytes we have 
+                    matches = 0
+                    for current_depth in range(0, len_oid_requested):
                         
-                        print(f'Proceeding with scoring against element {high_score_cursor + 1}')
+                        if tree[tree_cursor]['oid_hex'][current_depth] == oid_requested[current_depth]:
+                            matches += 1
+                        else:
+                            break
+                    
+                    #print(f'matches: {matches} , len_oid_requested: {len_oid_requested}')
+                    # if this matches the length required, then we have identified a candidate record.
+                    if matches == len_oid_requested:
+                        print(f'Identified a prefix match.  Element {tree_cursor}')
                         
-                        if oid_requested[matches] > tree[high_score_cursor + 1]['oid_hex'][matches]:
-                            print(f'the requested OID byte is greater than this, we have a new champ')
-                            high_score_cursor +=1 
-                        else: 
-                            print(f'the requested OID byte is less than this.  We have the final next record.')
-                            game_on = False
-                # end game on
+                        datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_hex'], tree[tree_cursor]['oid_value'], tree[tree_cursor]['oid_type'])
+                        game_on = False
+                    else:
+                        tree_cursor += 1
 
-                print(f'the next record to hand back is tree element {high_score_cursor+1}.  {tree[high_score_cursor+1]}')
+                    if tree_cursor == (len(tree) - 1):
+                        game_on = False
+
+
+            print(f'Best match depth: {matches} at tree cursor position {tree_cursor}')
+
+            # Sending a reply to client
+            sock.sendto(datafill, addr)
 
     except Exception as e:
         print(f'Exception: {e}')
