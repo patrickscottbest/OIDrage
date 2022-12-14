@@ -38,6 +38,8 @@ Prep script for system config, multiple loopback interfaces and systemctl contro
 
 Understanding the OIDs took a lot of investigation.  OIDs are variable-length and there is a flag and mathematical formula used to calculate them as the OID OBJECT_NAME is examined.  This means there are ranges of OIDs that simply can't exist.
 
+Update - not only are the OIDs themselves variable length, but the placeholders/positions in the bytes response for "bytes to follow" (eg, bytes length) also need to be accomodated with the same encoding scheme.
+
 
 Great breakdowns and images of actual byte sequences.  https://www.ranecommercial.com/legacy/note161.html
 

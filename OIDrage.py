@@ -86,7 +86,7 @@ def get_tree_dict(Line):
     #print (f"oid_type: {oid_type} hex: {oid_type.encode('utf-8').hex()} vartype: {type(oid_type)}")
 
     if oid_type == "STRING":
-        oid_value = Line.split("=", 1)[1].split(":", 1)[1].strip()
+        oid_value = Line.split("=", 1)[1].split(":", 1)[1].strip().strip('\"')
     elif oid_type == "Hex-STRING":
         oid_value = Line.split("=")[1].split(":")[1].strip()
     elif oid_type == "IpAddress":
@@ -123,6 +123,7 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
     # assign OID type
     OID_type_lookup = {
         "Hex-STRING": 0x04 , 
+        "STRING": 0x04 ,
         "OctetString": 0x04 , 
         "INTEGER": 0x02, 
         "null": 0x05, 
@@ -130,7 +131,10 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
         "Counter32": 0x41,
     }
     OID_type = OID_type_lookup[oid_type]  # based on string search
-
+    
+    ### LENGTHS ###
+    ### LENGTHS ###
+    ### LENGTHS ###
     
     # Initialise lengths to be built from the bottom up.
     print("Initialise lengths")
@@ -139,15 +143,12 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
     length_to_end1_response = 0x0
     length_to_end2_bindings = 0x0
     length_to_end3_binding_one = 0x0 
-    length_to_end4_value = 0x0 
-    
-    ### LENGTHS ###
-    ### LENGTHS ###
-    ### LENGTHS ###
+    length_to_end4_value = 0x0
 
     # Encrich lengths from bottom up.
     running_total = 0
-    
+    print('Enrich lengths from bottom up')
+
     # OID value is the last thing
     if isinstance(oid_value, int):
         # caution, this integer is a 32-bit SIGNED.
@@ -159,6 +160,9 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
             running_total += (value_floor + 1)
         else: 
             running_total += value_floor +1
+    elif ((isinstance(oid_value, str)) & (oid_type == "STRING")):
+        print(f'reserving space for {len(oid_value)} more places...')
+        running_total += len(oid_value.strip('\"'))
     elif isinstance(oid_value, str):
         #running_total += len((oid_value))
         running_total += len(bytes.fromhex(oid_value))
@@ -198,6 +202,7 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
     running_total += 2  #  i need 2 more to make it work and i don't know exactly i'm going wrong.....  
 
     length_all = running_total
+    # Ignoring below remaining preamble:
     # length byte placeholder, does not count
     # 0x30 , start, does not count
 
@@ -208,8 +213,8 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
     ### FILL ###
 
     # Fill the template
-    datafill = bytearray()
-    print('initialised byte array')
+    print('Filling the template')
+    datafill = bytearray()  # a blank
     datafill.append(0x30)  # 1 byte, start. 
     datafill.append(length_all)  # 1 byte, length to end
     
@@ -253,6 +258,8 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
 
     if isinstance(oid_value, int):
         datafill.extend(oid_value.to_bytes(length_to_end4_value, 'big'))
+    elif (isinstance(oid_value, str) & (oid_type == "STRING")):
+        datafill.extend(oid_value.strip('\"').encode('latin-1'))
     elif isinstance(oid_value, str): 
         #datafill.extend(oid_value.encode('utf8'))
         datafill.extend(bytes.fromhex(oid_value))
@@ -330,6 +337,9 @@ def extract_request_details(data):
 def formulate_end_of_mib(request_id, community, oid_hex, oid_value, oid_type):
     pass
 
+def formulate_no_object_found(request_id, community, oid_hex, oid_value, oid_type):
+    pass
+
 def get_request_type(data):
     # Lookahead to determine the type of request.  Need to skep a variable length field to do it (community)
     # A0get-request A1get-next-request A2get-response
@@ -400,51 +410,29 @@ while True:
 
         # Extract the artifacts we need to construct a response
         community, request_id, oid_requested = extract_request_details(data)
-
+        request_type = get_request_type(data)
         
-        # Direct Match Shortcut
-        tree_cursor = 0
-        for t in range(0,len(tree)):
-            #search the tree elements for a dict for a direct match. 
-            if tree[t]['oid_hex'] == oid_requested:
-                print(f"Direct OID match at branch position {t}. ")
-                if t == (len(tree) - 1):
-                    # there's nothing left.  Send back EndOfMib
+        # Request Type: get-request
+        if request_type == 0xA0:
+            # Direct Match Shortcut
+            for t in range(0,len(tree)):
+                #search the tree elements for a dict for a direct match. 
+                if tree[t]['oid_hex'] == oid_requested:
+                    print(f"Direct OID match at branch position {t}. ")
+                    datafill = formulate_get_response(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
+                    print(f"sending Valid Response based on element {t} {tree[t]}")
+                elif (t+1) > len(tree):
                     print("sending EndOfMib")
-                    formulate_end_of_mib(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
-                else:
-                    
-                    # determine request type
-                    
-                    request_type = get_request_type(data)
-                    if request_type == 0xA0:  # get-request
-                        print("get-request received")
-                        datafill = formulate_get_response(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
-                        print(f"sending Valid Response based on element {t} {tree[t]}")
-                    elif request_type == 0xa1:  # get-next-request
-                        print("get-next-request received ")
-                        
+                    datafill = formulate_no_object_found(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
 
-                        # evaulate the next for a prefix match.... 
-                        # even if it's not the same prefix,a bogus result is presented and I witnessed the LINUX client followup with a get-request for that exact OID.
-                        
-                        datafill = formulate_get_response(request_id, community, tree[t+1]['oid_hex'], tree[t+1]['oid_value'], tree[t+1]['oid_type'])
-                        print(f"sending Valid Response based on element {t+1} {tree[t+1]}")
+            # Sending a reply to client
+            sock.sendto(datafill, addr)
 
-                    else: 
-                        print("Incorrect request_type")
-                        raise Exception("problem with request_type")
-                    
-                    # Sending a reply to client
-                    sock.sendto(datafill, addr)
 
-                tree_cursor = t
-        
 
-        # First Full-Prefix Match Search
-        # we need a full prefix match.
-
-        if tree_cursor == 0:
+        # Request Type: get-next-request
+        elif request_type == 0xA1: 
+            print("get-next-request received ")
             
             # we couldn't find a direct match... time to get fancy and find the next best thing.
             # the match should be closest to the top of the tree as possible.
@@ -452,7 +440,8 @@ while True:
             len_oid_requested = len(oid_requested)
         
             game_on = True
-            
+            tree_cursor = 0
+
             print('Could not find direct match.  Sub searching for closest branch.')
             
             # compare the requested OID bytes with branch's bytes to the maximum depth of the first part of the matched bytes.
@@ -491,10 +480,20 @@ while True:
                         game_on = False
 
 
-            print(f'Best match depth: {matches} at tree cursor position {tree_cursor}')
+            print(f'Best match depth: {matches} at tree cursor position {tree_cursor}')      
+
 
             # Sending a reply to client
             sock.sendto(datafill, addr)
+            print('datafill sent to client')
+
+        else: 
+            print("OIDrage: Unknown or Unsupported request_type")
+            raise Exception("OIDrage: Unknown or Unsupported request_type")
+        
+
+
+
 
     except Exception as e:
         print(f'Exception: {e}')
