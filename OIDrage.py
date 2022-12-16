@@ -442,6 +442,7 @@ while True:
         community, request_id, oid_requested = extract_request_details(data)
         request_type = get_request_type(data)
         
+        len_oid_requested = len(oid_requested)
         datafill = bytearray()
         tree_cursor = 0
 
@@ -457,10 +458,10 @@ while True:
                     found = True
                     tree_cursor = t
                     break
-                else
+                else:
                     pass
 
-            if Found:
+            if found:
                 datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_hex'], tree[tree_cursor]['oid_value'], tree[tree_cursor]['oid_type'])
                 logging.debug(f"Formulating Valid Response based on element {t} {tree[t]}")
             else:
@@ -471,7 +472,6 @@ while True:
         # get-next-request
         elif request_type == 0xA1:
 
-
             found = False
             # Direct Match Shortcut
             for t in range(0,len(tree)):
@@ -481,16 +481,15 @@ while True:
                     found = True
                     tree_cursor = t + 1  # next in tree
                     break
-                else
+                else:
                     pass
 
-            if Found:
+            if found:
                 
-                if (tree_cursor+1) > len(tree):
+                if ((tree_cursor) < len(tree)):
                     # next record would be beyond end of tree      
                     logging.debug(f"Formulating Valid Response based on next element {tree_cursor} {tree[tree_cursor]}")
-                    datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_hex'], tree[tree_cursor]['oid_value'], tree[tree_cursor]['oid_type'])
-                    
+                    datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_hex'], tree[tree_cursor]['oid_value'], tree[tree_cursor]['oid_type'])                   
                 else: 
                     logging.debug("Formulating endOfMibView")
                     datafill = formulate_get_response(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
