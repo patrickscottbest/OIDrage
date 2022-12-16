@@ -46,6 +46,9 @@ Great breakdowns and images of actual byte sequences.  https://www.ranecommercia
 
 https://learn.microsoft.com/en-us/windows/win32/seccertenroll/about-object-identifier?redirectedfrom=MSDN
 
+More on Variable Length Quantity (ASN.1 encoding) https://stackoverflow.com/questions/5929050/how-does-asn-1-encode-an-object-identifier
+
+
 
 Found in https://github.com/wireshark/wireshark/blob/master/epan/oids.c#L1115
 
