@@ -442,68 +442,79 @@ while True:
         community, request_id, oid_requested = extract_request_details(data)
         request_type = get_request_type(data)
         
-        # Request Type: get-request
+        datafill = bytearray()
+        tree_cursor = 0
+
+        # get-request
         if request_type == 0xA0:
+
+            found = False
             # Direct Match Shortcut
             for t in range(0,len(tree)):
                 #search the tree elements for a dict for a direct match. 
                 if tree[t]['oid_hex'] == oid_requested:
                     logging.debug(f"Direct OID match at branch position {t}. ")
-                    datafill = formulate_get_response(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
-                    logging.debug(f"sending Valid Response based on element {t} {tree[t]}")
-                elif (t+1) > len(tree):
-                    logging.debug("sending EndOfMib")
-                    datafill = formulate_no_object_found(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
+                    found = True
+                    tree_cursor = t
+                    break
+                else
+                    pass
 
-            # Sending a reply to client
-            sock.sendto(datafill, addr)
+            if Found:
+                datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_hex'], tree[tree_cursor]['oid_value'], tree[tree_cursor]['oid_type'])
+                logging.debug(f"Formulating Valid Response based on element {t} {tree[t]}")
+            else:
+                logging.debug("Formulating OID NOT FOUND")
+                #### does not exist yet
+                datafill = formulate_no_object_found(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
+
+        # get-next-request
+        elif request_type == 0xA1:
 
 
+            found = False
+            # Direct Match Shortcut
+            for t in range(0,len(tree)):
+                #search the tree elements for a dict for a direct match. 
+                if tree[t]['oid_hex'] == oid_requested:
+                    logging.debug(f"Direct OID match at branch position {t}. ")
+                    found = True
+                    tree_cursor = t + 1  # next in tree
+                    break
+                else
+                    pass
 
-        # Request Type: get-next-request
-        elif request_type == 0xA1: 
-            logging.debug("get-next-request received ")
-    
-            # the match should be closest to the top of the tree as possible.
-
-            len_oid_requested = len(oid_requested)
-        
-            game_on = True
-            tree_cursor = 0
-            
-            # compare the requested OID bytes with branch's bytes to the maximum depth of the first part of the matched bytes.
-            while game_on:
-
-               
-                # figure out how many bytes deep this comparison will be.
-                len_oid_branch = len(tree[tree_cursor]['oid_hex'])
-                if len_oid_branch < len_oid_requested:
-                    # we don't want this record then.
-                    # clearly not a match
-                    logging.debug('length of branch is less than request.')
-                    tree_cursor += 1
+            if Found:
                 
+                if (tree_cursor+1) > len(tree):
+                    # next record would be beyond end of tree      
+                    logging.debug(f"Formulating Valid Response based on next element {tree_cursor} {tree[tree_cursor]}")
+                    datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_hex'], tree[tree_cursor]['oid_value'], tree[tree_cursor]['oid_type'])
+                    
+                else: 
+                    logging.debug("Formulating endOfMibView")
+                    datafill = formulate_get_response(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
+                
+            else:
+                #### a direct match ooes not exist, let's find the closest.
+        
+                game_on = True
+                tree_cursor = 0
+                
+                # compare the requested OID bytes with branch's bytes to the maximum depth of the first part of the matched bytes.
+                while game_on:
 
-                else:
-
-                    # shortcut.  It's possible we were asked to get-next based on a known OID.
-                    if oid_requested == tree[tree_cursor]['oid_hex']:
-                        logging.debug('Requested OID Found.')
+                
+                    # figure out how many bytes deep this comparison will be.
+                    len_oid_branch = len(tree[tree_cursor]['oid_hex'])
+                    if len_oid_branch < len_oid_requested:
+                        # we don't want this record then.
+                        # clearly not a match
+                        logging.debug('length of branch is less than request.')
                         tree_cursor += 1
-
-                        if tree_cursor == (len(tree) - 1):
-                            # we are at the end of the search.  Time to send back a specially crafted endOfMibView packet. 
-                            # essentially repeating back the query with data 0x82 with 0x00 length
-                            logger.debug('cursor would be beyond end of mib.  sending end of mib view')
-                            datafill = formulate_get_response(request_id, community, oid_requested, '', 'endOfMibView')
-                            game_on = False
-                        else:
-                            logging.debug(f'Presenting next OID at position {tree_cursor}.')
-                            datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_hex'], tree[tree_cursor]['oid_value'], tree[tree_cursor]['oid_type'])
-                            game_on == False
+                    
                     else:
-
-                        #logging.debug('length of branch is more or equal to request.')
+                        # length of branch is longer or equal to length of request.
                         # roll through the bytes sequentially and see how many matched bytes we have 
                         matches = 0
                         for current_depth in range(0, len_oid_requested):
@@ -530,14 +541,13 @@ while True:
                             game_on = False
 
 
-            logging.debug(f'Best match depth: {matches} at tree cursor position {tree_cursor}')      
+                logging.debug(f'Best match node depth: {matches} at tree cursor position {tree_cursor}')      
 
             # Sending a reply to client
             sock.sendto(datafill, addr)
             logging.info('Response sent to client')
 
         else: 
-            logging.warning("OIDrage: Unknown or Unsupported request_type")
             raise Exception("OIDrage: Unknown or Unsupported request_type")
 
     except Exception as e:
