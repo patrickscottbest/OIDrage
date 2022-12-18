@@ -105,7 +105,7 @@ def OID_to_hex(oid_string):
     if not oid_string.startswith(".1.3.6"):
         # this might be ok, I have witnessed ".0.0" be a value presented by an OID node.
         #raise ValueError("Does not start as how we planned")
-        logging.warning("OID does not start with .1.3.6 - oid: {oid_string}")
+        logging.warning(f"OID does not start with .1.3.6 - oid: {oid_string}")
         
     oid_hex = bytearray()
     oid_hex.extend(b'\x2b')
@@ -164,59 +164,25 @@ def get_tree_dict(Line):
         logging.warning(f"Unknown OID type: {oid_type}.")
         raise Exception
 
+    # populate the response cache: 
+    oid_package = assemble_oid_package(oid_hex, oid_type, oid_value)    
+
+
     #logging.debug (f"oid_value: {oid_value}")
-    return {"oid_string": oid_string, "oid_hex": oid_hex, "oid_type": oid_type, "oid_value": oid_value}
+    return {"oid_string": oid_string, "oid_hex": oid_hex, "oid_type": oid_type, "oid_value": oid_value, "oid_package": oid_package}
 
 
-def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
-    # returns a prepared byte object for a non-final response to an SNMPwalk
-    
-    logging.debug(f'Stored oid type: {oid_type}.  Pythonic type of oid_value: {type(oid_value)}')
-    # # assign OID type
-    # OID_type_lookup = {
-    #     "IpAddress": 0x40 ,
-    #     "Timeticks": 0x43 , 
-    #     "Gauge32": 0x42 ,
-    #     "Hex-STRING": 0x04 , 
-    #     "STRING": 0x04 ,
-    #     "OctetString": 0x04 , 
-    #     "INTEGER": 0x02 ,
-    #     "null": 0x05 , 
-    #     "OID": 0x06 ,
-    #     "Counter32": 0x41 ,
-    #     "endOfMibView": 0x82 ,
-    #     "_none_": 0x04 , 
-    # }
-    # try:
-    #     OID_type = OID_type_lookup[oid_type]  # based on string search
-    # except Exception as e:
-    #     raise Exception(f'OID_type_lookup failed: {e}')
+def assemble_oid_package(oid_hex, oid_type, oid_value):
+    #  The oid package will be stored with the tree.  It is pre-calculated for speed.  It's construction and use is static.
 
-
-    ### LENGTHS ###
-    ### LENGTHS ###
-    ### LENGTHS ###
-    
-    # Initialise lengths to be built from the bottom up.
-    logging.debug("Initialise lengths")
-    length_all = 0x0
-    length_community = 0x0
-    length_to_end1_response = 0x0
-    length_to_end_binding_ONE = 0x0
-    length_to_end_binding_ALL = 0x0
-    length_to_end_of_oid = 0x0 
-    #length_to_end4_value = 0x0  # not needed anymore due to ASN1
-
-
-
-    # Encrich lengths from bottom up.
-    running_total = 0
-    logging.debug('Enrich lengths from bottom up')
- 
-    # Assemble the oid_value_package
+    # Assemble the oid_value_package bytearray: type, length, and the value.
     oid_value_package = bytearray()
 
-    if ((isinstance(oid_value, int)) & (oid_type == "Gauge32")):
+    if (oid_type=="endOfMibView"):  # this is really only used for dynamic calling of the assemble_oid_package, not the initial cache building
+        oid_value_package.append(0x82)
+        oid_value_package.append(0x00)
+
+    elif ((isinstance(oid_value, int)) & (oid_type == "Gauge32")):
         encoder.start()
         encoder.write(oid_value)
         oid_value_package = encoder.output()
@@ -232,7 +198,6 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
         oid_value_package = encoder.output()
 
     elif ((isinstance(oid_value, str)) & (oid_type == "STRING")):
-        print('here')
         encoder.start()
         encoder.write(oid_value, nr=0x04)
         oid_value_package = encoder.output()
@@ -246,20 +211,53 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
         encoder.start()
         encoder.write(oid_value, nr=0x04)
         oid_value_package = encoder.output()
+
     else: 
         logging.error("Unknown OID_Value encoding method.")
         raise Exception("Could not determine how to encode this oid_value.")
 
-    logging.debug(f'oid_value_package is {oid_value_package}')
-    running_total += len(oid_value_package)
+    #logging.debug(f'oid_value_package is {oid_value_package}')
+
+    # assemble the total package:
+    oid_package = bytearray()
+
+    oid_package.append(0x06)  # 0x06 means this is an OID
+    oid_package.extend(encode_variable_length(len(oid_hex)))  # length of the OID to follow
+    oid_package.extend(bytes(oid_hex))  # the actual 1.3.6.....oid
+    oid_package.extend(oid_value_package)  # the entire value package: value_type, value_length, value
+
+    return oid_package
+
+#def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
+def formulate_get_response(request_id, community, oid_package):
+    # returns a prepared byte object for a non-final response to an SNMPwalk
+    
+    #if DEBUG: logging.debug(f'Stored oid type: {oid_type}.  Pythonic type of oid_value: {type(oid_value)}')
 
 
-    # OID section
-    running_total += len(oid_hex)
-    length_to_end_of_oid = len(oid_hex) # to end of oid only.
-    #running_total += len(encode_variable_length_quantity_allMSB1(len(oid_hex))) 
-    running_total += len(encode_variable_length(len(oid_hex)))
-    running_total += 1  # oid_value demarc placeholder 0x06
+    ### LENGTHS ###
+    ### LENGTHS ###
+    ### LENGTHS ###
+    
+    # Initialise lengths to be built from the bottom up.
+    if DEBUG: logging.debug("Initialise lengths")
+    length_all = 0x0
+    length_community = 0x0
+    length_to_end1_response = 0x0
+    length_to_end_binding_ONE = 0x0
+    length_to_end_binding_ALL = 0x0
+    length_to_end_of_oid = 0x0 
+    #length_to_end4_value = 0x0  # not needed anymore due to ASN1
+
+
+
+    # Encrich lengths from bottom up.
+    running_total = 0
+    if DEBUG: logging.debug('Enrich lengths from bottom up')
+ 
+    # Reserving space for the oid_package as a whole
+    running_total += len(oid_package)
+
 
     length_to_end_binding_ONE = running_total # length of variable-bindings ONE bytes remaining
     running_total += len(encode_variable_length(running_total))  # number of length bytes - could be a variable length if > 127
@@ -317,7 +315,7 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
     datafill.append(0x04)  # static, to end of request_id
     datafill.extend(request_id)
     logging.debug(f'request_id:')
-    print_hex_nicely(request_id)
+    if DEBUG: print_hex_nicely(request_id)
     datafill.append(0x02)  # no error
     datafill.append(0x01)  # no error
     datafill.append(0x00)  # no error
@@ -328,16 +326,16 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
     datafill.extend(encode_variable_length(length_to_end_binding_ALL))  # length of variable-bindings bytes remaining
     datafill.append(0x30)  # variable-bindings
     datafill.extend(encode_variable_length(length_to_end_binding_ONE))  # length of variable-bindings bytes remaining
-    datafill.append(0x06)  # OID number one
-    datafill.append(length_to_end_of_oid)  # length of the OID to follow
-    datafill.extend(oid_hex)  # variable, the encoded oid bytes, eg 0x2b plus 6.1.2.1...  see RFC spec
 
+    # datafill.append(0x06)  # OID number one
+    # datafill.append(length_to_end_of_oid)  # length of the OID to follow
+    # datafill.extend(oid_hex)  # variable, the encoded oid bytes, eg 0x2b plus 6.1.2.1...  see RFC spec
+    # datafill.extend(oid_value_package)
 
-    datafill.extend(oid_value_package)
-
+    datafill.extend(oid_package)
 
     logging.debug(f'Datafill As Prepared:')
-    print_hex_nicely(datafill)
+    if DEBUG: print_hex_nicely(datafill)
     return(datafill)
 
 
@@ -364,7 +362,7 @@ def extract_request_details(data):
             community = ""
             for i in range(comm_length):
                 community += chr(data[7+i])
-            logging.info(f'Community String: {community}')
+            logging.debug(f'Community String: {community}')
             
         else: 
             raise Exception
@@ -376,7 +374,7 @@ def extract_request_details(data):
         for i in range(0,4):
             request_id[i] = data[cursor + i]
         logging.info(f'Request ID: {int.from_bytes(request_id, "big")}')
-        print_hex_nicely(request_id)
+        if DEBUG: print_hex_nicely(request_id)
         cursor += 4
 
         # Advance the cursor to the OID length definition, accounting for 11 bytes of unnecessary error codes and index.
@@ -391,8 +389,7 @@ def extract_request_details(data):
             oid_requested[i] = data[cursor + i]
         cursor += oid_len
         logging.debug(f'OID Requested: {oid_requested}') 
-        if DEBUG: 
-            print_hex_nicely(oid_requested)
+        if DEBUG: print_hex_nicely(oid_requested)
 
         return community, request_id, oid_requested
 
@@ -412,18 +409,18 @@ def get_request_type(data):
     # Lookahead to determine the type of request.  Need to skep a variable length field to do it (community)
     # A0get-request A1get-next-request A2get-response
 
-    logging.debug('getting request type')
+    if DEBUG: logging.debug('getting request type')
 
     #cursor skips to variable-length-integer-byte 
     cursor = 0 
     cursor += 6  # the 6th byte is the value we also want
 
     communitylength = data[cursor]
-    logging.debug(f'communitylength is {communitylength}')
+    if DEBUG: logging.debug(f'communitylength is {communitylength}')
     cursor += communitylength
 
     request_type = data[cursor + 1]  # the very next byte has the answers.
-    logging.debug(f'request type determined to be {hex(request_type)}')
+    if DEBUG: logging.debug(f'request type determined to be {hex(request_type)}')
     return request_type
 
 
@@ -436,11 +433,11 @@ problems = 0
 # Strips the newline character
 for line in Lines:
     count += 1
-    #logging.debug("Importing Line{}: {}".format(count, line.strip()))
+    #if DEBUG: logging.debug("Importing Line{}: {}".format(count, line.strip()))
     try:
         tree.append(get_tree_dict(line))
     except:
-        logging.debug(f"Problem importing this line: {line}".strip())
+        logging.info(f"Problem importing this line: {line}".strip())
         problems += 1
 
 logging.info(f'Loaded file: problems: {problems} total reviewed: {count} tree size: {len(tree)}')
@@ -462,15 +459,14 @@ while True:
     
     # diagnostics
     logging.info("RECEIVED MESSAGE")
-    #print_hex_nicely(data)
-
 
     # Validate the request 
     try: 
         if not request_valid:
             raise Exception("Request is Not Valid.")
         else:
-            logging.debug("Request is Valid.")
+            if DEBUG: logging.debug("Request is Valid.")
+            pass
 
         # Extract the artifacts we need to construct a response
         community, request_id, oid_requested = extract_request_details(data)
@@ -488,20 +484,21 @@ while True:
             for t in range(0,len(tree)):
                 #search the tree elements for a dict for a direct match. 
                 if tree[t]['oid_hex'] == oid_requested:
-                    logging.debug(f"Direct OID match at branch position {t}. ")
+                    if DEBUG: logging.debug(f"Direct OID match at branch position {t}. ")
                     found = True
                     tree_cursor = t
                     break
                 else:
                     pass
 
-            if found:
-                datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_hex'], tree[tree_cursor]['oid_value'], tree[tree_cursor]['oid_type'])
-                logging.debug(f"Formulating Valid Response based on element {t} {tree[t]}")
+            if found:      
+                datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])
+                if DEBUG: logging.debug(f"Formulating Valid Response based on element {t} {tree[t]}")
             else:
-                logging.debug("Formulating OID NOT FOUND")
+                if DEBUG: logging.debug("Formulating OID NOT FOUND")
                 #### does not exist yet
-                datafill = formulate_no_object_found(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
+                endOfMibView_oid_package = assemble_oid_package(oid_requested,'endOfMibView', '')
+                datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
 
         # get-next-request
         elif request_type == 0xA1:
@@ -511,7 +508,7 @@ while True:
             for t in range(0,len(tree)):
                 #search the tree elements for a dict for a direct match. 
                 if tree[t]['oid_hex'] == oid_requested:
-                    logging.debug(f"Direct OID match at branch position {t}. ")
+                    if DEBUG: logging.debug(f"Direct OID match at branch position {t}. ")
                     found = True
                     tree_cursor = t + 1  # next in tree
                     break
@@ -521,12 +518,14 @@ while True:
             if found:
                 
                 if ((tree_cursor) < len(tree)):
-                    # next record would be beyond end of tree      
-                    logging.debug(f"Formulating Valid Response based on next element {tree_cursor} {tree[tree_cursor]}")
-                    datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_hex'], tree[tree_cursor]['oid_value'], tree[tree_cursor]['oid_type'])                   
+                    if DEBUG: logging.debug(f"Formulating Valid Response based on next element {tree_cursor} {tree[tree_cursor]}")
+                    datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])                   
                 else: 
-                    logging.debug("Formulating endOfMibView")
-                    datafill = formulate_get_response(request_id, community, tree[t]['oid_hex'], tree[t]['oid_value'], tree[t]['oid_type'])
+                    # next record would be beyond the MIB
+                    if DEBUG: logging.debug("Formulating endOfMibView")
+                    # denote end of MIB by using the requested OID, and a value fill of 0x82 0x00
+                    endOfMibView_oid_package = assemble_oid_package(oid_requested,'endOfMibView', '')
+                    datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
                 
             else:
                 #### a direct match ooes not exist, let's find the closest.
@@ -541,9 +540,8 @@ while True:
                     # figure out how many bytes deep this comparison will be.
                     len_oid_branch = len(tree[tree_cursor]['oid_hex'])
                     if len_oid_branch < len_oid_requested:
-                        # we don't want this record then.
-                        # clearly not a match
-                        logging.debug('length of branch is less than request.')
+                        # we don't want this record then... clearly wont be a match
+                        #if DEBUG: logging.debug('length of branch is less than request.')
                         tree_cursor += 1
                     
                     else:
@@ -560,9 +558,9 @@ while True:
                         #logging.debug(f'matches: {matches} , len_oid_requested: {len_oid_requested}')
                         # if this matches the length required, then we have identified a candidate record.
                         if matches == len_oid_requested:
-                            logging.debug(f'Identified a prefix match.  Element {tree_cursor}')
+                            if DEBUG: logging.debug(f'Identified a prefix match.  Element {tree_cursor}')
                             
-                            datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_hex'], tree[tree_cursor]['oid_value'], tree[tree_cursor]['oid_type'])
+                            datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])
                             game_on = False
                         else:
                             tree_cursor += 1
@@ -570,11 +568,12 @@ while True:
                         if tree_cursor == (len(tree) - 1):
                             # we are at the end of the search.  Time to send back a specially crafted endOfMibView packet. 
                             # essentially repeating back the query with data 0x82 with 0x00 length
-                            datafill = formulate_get_response(request_id, community, oid_requested, '', 'endOfMibView')
+                            endOfMibView_oid_package = assemble_oid_package(oid_requested,'endOfMibView', '')
+                            datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
                             game_on = False
 
 
-                logging.debug(f'Best match node depth: {matches} at tree cursor position {tree_cursor}')      
+                if DEBUG: logging.debug(f'Best match node depth: {matches} at tree cursor position {tree_cursor}')      
 
             # Sending a reply to client
             sock.sendto(datafill, addr)
