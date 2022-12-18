@@ -13,8 +13,14 @@ encoder = asn1.Encoder()
 
 import ipaddress # makes this program only 3.3 compliant
 
+DEBUG = False
+
 import logging
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+if not DEBUG: 
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+else:
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+
 
 logging.info("Opening mimic file")
 file1 = open('mimic.txt', 'r')
@@ -44,6 +50,22 @@ def print_hex_nicely(data):
         count += 1
     logging.debug(nice_hex)
 
+
+def encode_variable_length(length):  # type: (int) -> bytes
+    if length < 128:
+        return length.to_bytes(1, 'big', signed=False)
+    else:
+        result = bytearray()
+        values = []
+        while length:
+            values.append(length & 0xff)
+            length >>= 8
+        values.reverse()
+        head = bytes([0x80 | len(values)])
+        result.extend(head)
+        for val in values:
+            result.extend(bytes([val]))
+        return result
 
 def encode_variable_length_quantity(v:int) -> list:
     # Used for OIDs
@@ -231,69 +253,33 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
     logging.debug(f'oid_value_package is {oid_value_package}')
     running_total += len(oid_value_package)
 
-    # going to use asn1 encoder instead.
-    # # OID_value is the last component
-    # if (isinstance(oid_value, int) & (oid_type == "Gauge32")):
-    #     # caution, this integer is a 32-bit SIGNED
-    #     running_total += len(encode_variable_length_quantity_allMSB1(oid_value))
-    # elif (isinstance(oid_value, int) & (oid_type == "IpAddress")):
-    #     running_total += len(oid_value.to_bytes(4, 'big'))
-    # elif isinstance(oid_value, int):
-    #     # caution, this integer is a 32-bit SIGNED.
-    #     print('here')
-    #     running_total += len(encode_variable_length_quantity(oid_value))
-    #     print('here2')
-    #     # value_mod = oid_value.bit_length() % 8
-    #     # logging.debug(f'mod {value_mod}')
-    #     # value_floor = oid_value.bit_length() // 8
-    #     # logging.debug(f'value floor {value_floor}')
-    #     # if value_mod > 0:
-    #     #     running_total += (value_floor + 1)
-    #     # else: 
-    #     #     running_total += value_floor + 1
-    # elif ((isinstance(oid_value, str)) & (oid_type == "STRING")):
-    #     running_total += len(oid_value.strip('\"'))
-    # elif ((isinstance(oid_value, str)) & (oid_type == "OID")):
-    #     logging.debug(f'reserving space for {len(OID_to_hex(oid_value))} more places...')
-    #     running_total += len(OID_to_hex(oid_value))
-    # elif isinstance(oid_value, str):
-    #     #running_total += len((oid_value))
-    #     running_total += len(bytes.fromhex(oid_value))
-    #     #... etc
-
-
-    #length_to_end4_value = running_total  # length of oid_value bytes
-    #running_total += len(encode_variable_length_quantity(running_total))  # number of length bytes - could be a variable length if > 127
-    #running_total += 1  # oid_value demarc placeholder 0x04
 
     # OID section
     running_total += len(oid_hex)
     length_to_end_of_oid = len(oid_hex) # to end of oid only.
-    running_total += len(encode_variable_length_quantity_allMSB1(len(oid_hex))) 
+    #running_total += len(encode_variable_length_quantity_allMSB1(len(oid_hex))) 
+    running_total += len(encode_variable_length(len(oid_hex)))
     running_total += 1  # oid_value demarc placeholder 0x06
 
-
     length_to_end_binding_ONE = running_total # length of variable-bindings ONE bytes remaining
-    running_total += len(encode_variable_length_quantity_allMSB1(running_total))  # number of length bytes - could be a variable length if > 127
+    running_total += len(encode_variable_length(running_total))  # number of length bytes - could be a variable length if > 127
     running_total += 1  # variable binding number ONE:  0x30
-
     length_to_end_binding_ALL = running_total # length of variable-bindings ALL bytes remaining
-    running_total += len(encode_variable_length_quantity_allMSB1(running_total))  # number of length bytes - could be a variable length if > 127 
+    running_total += len(encode_variable_length(running_total))  # number of length bytes - could be a variable length if > 127 
     running_total += 1  # variable-bindings ALL : 0x30
 
     running_total += 6  # error overhead
 
-    running_total += 4  # request ID 
+    running_total += 4  # request ID , always 4 bytes
     running_total += 2  # request ID preamble 0x0204
 
     length_to_end1_response = running_total
-    running_total += len(encode_variable_length_quantity_allMSB1(running_total))  # length byte placeholder 
+    running_total += len(encode_variable_length(running_total))  # length byte placeholder 
     running_total += 1  # RESPONSE 0xA2
     
     length_community = len(community)
     running_total += len(community)
-    running_total += len(encode_variable_length_quantity_allMSB1(length_community))  # demarc, length byte placeholder  
-    
+    running_total += len(encode_variable_length(length_community))  # demarc, length byte placeholder  
     running_total += 1  # community dmarc 0x04
     running_total += 3  # demarc 0x02, 0x01 bytelengths, 0x01 version
     length_all = running_total
@@ -313,7 +299,7 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
     datafill.append(0x30)  # 1 byte, start. 
     
     logging.debug(f'encode is {encode_variable_length_quantity_allMSB1(length_all)} ')
-    datafill.extend(encode_variable_length_quantity_allMSB1(length_all))  # variable length
+    datafill.extend(encode_variable_length(length_all))  # variable length
 
     datafill.append(0x02)  # demarc, version
     datafill.append(0x01)  # demarc, length 01
@@ -325,7 +311,7 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
 
     datafill.append(0xA2)  # indicates RESPONSE, A0 is get-request, A1 is get-next-request , A2 is get_response
     logging.debug(f'after 0xa2 length_to_end1_response is {length_to_end1_response} resultant is {encode_variable_length_quantity_allMSB1(length_to_end1_response)}')
-    datafill.extend(encode_variable_length_quantity_allMSB1(length_to_end1_response))  # length of RESPONSE bytes remaining entirely
+    datafill.extend(encode_variable_length(length_to_end1_response))  # length of RESPONSE bytes remaining entirely
 
     datafill.append(0x02)  # request_id demarc
     datafill.append(0x04)  # static, to end of request_id
@@ -339,38 +325,15 @@ def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
     datafill.append(0x01)  # error index 0
     datafill.append(0x00)  # error index 0
     datafill.append(0x30)  # variable-bindings
-    datafill.extend(encode_variable_length_quantity_allMSB1(length_to_end_binding_ALL))  # length of variable-bindings bytes remaining
+    datafill.extend(encode_variable_length(length_to_end_binding_ALL))  # length of variable-bindings bytes remaining
     datafill.append(0x30)  # variable-bindings
-    datafill.extend(encode_variable_length_quantity_allMSB1(length_to_end_binding_ONE))  # length of variable-bindings bytes remaining
+    datafill.extend(encode_variable_length(length_to_end_binding_ONE))  # length of variable-bindings bytes remaining
     datafill.append(0x06)  # OID number one
     datafill.append(length_to_end_of_oid)  # length of the OID to follow
     datafill.extend(oid_hex)  # variable, the encoded oid bytes, eg 0x2b plus 6.1.2.1...  see RFC spec
 
 
     datafill.extend(oid_value_package)
-    ## instead of doing this peicemeal, we're going to go with a package created by ASN1
-    # datafill.append(OID_type)  # oid value type - 1 byte, could be Integer32, etc. , ex: 0x04
-    # datafill.append(length_to_end4_value)  # length of value bytes remaining
-    # # Various OID value methods
-    # logging.debug(f'oid_value : {oid_value}')
-    # if (isinstance(oid_value, int) & (oid_type == "Gauge32")):
-    #     datafill.extend(encode_variable_length_quantity_allMSB1(oid_value))
-    # elif (isinstance(oid_value, int) & (oid_type == "IpAddress")):
-    #     datafill.extend(oid_value.to_bytes(4, 'big'))
-    # elif isinstance(oid_value, int):
-        
-    #     datafill.extend(encode_variable_length_quantity(oid_value))
-    #     # this didn't work for a signed integer.
-    #     #datafill.extend(oid_value.to_bytes(length_to_end4_value, 'big', signed =True))
-    # elif (isinstance(oid_value, str) & (oid_type == "STRING")):
-    #     datafill.extend(oid_value.strip('\"').encode('latin-1'))
-    # elif (isinstance(oid_value, str) & (oid_type == "OID")):
-    #     datafill.extend(OID_to_hex(oid_value))
-    # elif isinstance(oid_value, str): 
-    #     #datafill.extend(oid_value.encode('utf8'))
-    #     datafill.extend(bytes.fromhex(oid_value))
-    # else:
-    #     logging.debug('nope')
 
 
     logging.debug(f'Datafill As Prepared:')
@@ -427,8 +390,9 @@ def extract_request_details(data):
         for i in range(0, oid_len):
             oid_requested[i] = data[cursor + i]
         cursor += oid_len
-        logging.info(f'OID Requested:') 
-        print_hex_nicely(oid_requested)
+        logging.debug(f'OID Requested: {oid_requested}') 
+        if DEBUG: 
+            print_hex_nicely(oid_requested)
 
         return community, request_id, oid_requested
 

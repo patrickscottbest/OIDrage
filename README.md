@@ -34,11 +34,30 @@ Prep script for system config, multiple loopback interfaces and systemctl contro
 
 # Notes 
 
+OID Types
+https://www.rfc-editor.org/rfc/rfc1902.html#section-7.1.1
+
+Curses upon you, ITU-T X.690 ANS.1 (Abstract Syntax Notation 1) BER (Basic Encoding Rules)
+https://www.itu.int/ITU-T/studygroups/com17/languages/X.690-0207.pdf
+
+
+## Encoding Notes
+
+SNMP message encoding requires the use of maths in 3 circumstances
+
+- OID node numbers
+- SNMP "length denotations" peppered throughout responses are encoded
+- OID values of type Integer32 are signed, and also encoded.
+
+Understanding the OID node values encoding took a lot of investigation.  
+OIDs are variable-length and there is a flag and mathematical formula used to calculate them as the OID OBJECT_NAME is examined.
+
+Not only are the OID nodes themselves encoded with variable length, but the placeholders/positions in the bytes response for "bytes to follow" (eg, bytes length) also need to be accomodated with the same encoding scheme.
+
+I've also discovered that OID values that are Integer32 have some kind of unique calculation performed. 0xFF is -1 in decimal.  0x0400 is 1024decimal.  0x01 is 1 decimal.
+
+
 ## OID implementation
-
-Understanding the OIDs took a lot of investigation.  OIDs are variable-length and there is a flag and mathematical formula used to calculate them as the OID OBJECT_NAME is examined.  This means there are ranges of OIDs that simply can't exist.
-
-Update - not only are the OIDs themselves variable length, but the placeholders/positions in the bytes response for "bytes to follow" (eg, bytes length) also need to be accomodated with the same encoding scheme.
 
 
 Great breakdowns and images of actual byte sequences.  https://www.ranecommercial.com/legacy/note161.html
