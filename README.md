@@ -1,23 +1,24 @@
 # OIDrage
-A lightweight SNMPv2c server for testing purposes.  Sends very limited responses of test data.  Designed to scale.
+A lightweight SNMPv2c server for testing purposes.  Sends mimic responses of test data based on any snmpwalk.  Designed to scale.
 
 # Updates
 20221208 - Initiate Project - Complimentery to https://github.com/patrickscottbest/hammerOID
+20221218 - Ready for walks and for individual gets.
 
 # About OIDrage
-A lightweight SNMPv2c setup to mimic thousands of datapoints for a real cacti installation.  
+A lightweight SNMPv2c setup to mimic thousands of datapoints for testing any snmp scraper, for example, a real cacti installation.  
 
-This software is designed to be raw, quick, and not feature-bloated for mimicing real world load testing and KPI evaluations.  The usual PySNMP libraries are not used.  This software is stand-alone and requires Python 3.3+ for IP address module support.
+This software is designed to be raw, quick, and not feature-bloated.  It can mimic machines for load testing and KPI evaluations.  The usual PySNMP libraries are not used.  This software is stand-alone and requires Python 3.3+ for IP address module support.
 
 The input file is a valid snmpwalk output (numerical).  
 Either provide your own mimic.txt using "snmpwalk -v2c -c public -On 127.0.0.1 .1 > mimic.txt", or just use the default provided.
 
-# Config Inputs and Styling
-Allows various configuration inputs
+# Configuration
+Allows various configuration inputs.  Until command line syntax available, use variables top of OIDrage.py.
 - specify mimic-file, or use included.
-- response delay (in ms, default 15, recommended 100 for WAN emulation) 
-- Interface - (defualt lo at 127.0.0.1 || integer16_increment from .1)
-- UDP Port (514 || integer16_increment_from_514)
+- response delay (in ms, default 0, recommended 100 for WAN emulation)
+- Interface - (defualt lo at 127.0.0.1)
+- UDP Port (default 514)
 
 # Implementation
 Create a mimic tree using an snmpwalk or use the included default (a linux system)
@@ -26,10 +27,10 @@ Values returned are static.
 A python script designed to make use of raw UDP port message and answer .
 
 # Future
-OID tree characteristics 
-  - depth of OID tree (in layers)
-  - length of OID response (in bytes, b(response:answer)) 
-Prep script for system config, multiple loopback interfaces and systemctl control parameters if needed.
+Command line arguments.
+Accomodate bulk-requests.
+"Wiggle" of common parameters (cpu / mem / interface).
+Timeticks will move upwards.
 
 
 # Notes 
@@ -45,7 +46,7 @@ https://www.itu.int/ITU-T/studygroups/com17/languages/X.690-0207.pdf
 
 SNMP message encoding requires the use of maths in 3 circumstances
 
-- OID node numbers
+- OID node numbers, when > 127 or 0x7F
 - SNMP "length denotations" peppered throughout responses are encoded
 - OID values of type Integer32 are signed, and also encoded.
 
@@ -59,18 +60,14 @@ I've also discovered that OID values that are Integer32 have some kind of unique
 
 ## OID implementation
 
-
 Great breakdowns and images of actual byte sequences.  https://www.ranecommercial.com/legacy/note161.html
-
 
 https://learn.microsoft.com/en-us/windows/win32/seccertenroll/about-object-identifier?redirectedfrom=MSDN
 
 More on Variable Length Quantity (ASN.1 encoding) https://stackoverflow.com/questions/5929050/how-does-asn-1-encode-an-object-identifier
 
-
-
+There's a myriad of ways to calculate, but my first real clue was found in the wireshark codebase
 Found in https://github.com/wireshark/wireshark/blob/master/epan/oids.c#L1115
-
 
 		if (subid <= 0x0000007F) {
 			bytelen += 1;

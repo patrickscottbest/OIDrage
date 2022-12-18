@@ -2,16 +2,16 @@
 # Patrick Scott Best, 2022
 # https://github.com/patrickscottbest/OIDrage
 
+# Uses a snmpwalk to mimic an SNMP target.
+
 # References: 
 # UDP Comm https://wiki.python.org/moin/UdpCommunication#CA-60759983b77d9e5650a253e88b9ac4b5e607d69c_3
 # SNMP RFCs https://datatracker.ietf.org/doc/html/rfc1906#section-8
 
+from time import sleep
 import socket
 import asn1.asn1 as asn1
-
-encoder = asn1.Encoder()
-
-import ipaddress # makes this program only 3.3 compliant
+import ipaddress # makes this program python3.3 required
 
 DEBUG = False
 
@@ -21,19 +21,22 @@ if not DEBUG:
 else:
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
 
-
-logging.info("Opening mimic file")
-file1 = open('mimic.txt', 'r')
-Lines = file1.readlines()
-
-
+INPUT_FILE = 'mimic.txt'
+DELAY = 0  # milliseconds delay before sending response
 UDP_IP = "127.0.0.1"   # this will be the default.
 UDP_IP = "10.0.1.124"  # test wired
 UDP_IP = "10.0.1.178"  # test wireless
 UDP_PORT = 5005
 
+logging.info("Opening mimic file")
+file1 = open(INPUT_FILE, 'r')
+Lines = file1.readlines()
+
+encoder = asn1.Encoder()
+
 
 def print_hex_nicely(data):
+    ## just a nice debug way to print out HEX, similar to wireshark packet bytes
 
     count = 1
     nice_hex = ""
@@ -81,35 +84,15 @@ def encode_variable_length_quantity(v:int) -> list:
     return output
 
 
-def encode_variable_length_quantity_allMSB1(v:int) -> list:
-    # Sadly, a different encoding than the OIDs themselves use.
-    # Used for length-byte representations
-    # Break it up in groups of 7 bits starting from the lowest significant bit
-    # If more than one output byte: for all groups set the MSB to 1
-    m = 0x00
-    output = []
-    while v >= 0x80:
-        output.insert(0, (v & 0x7f) | m)
-        v = v >> 7
-        m = 0x80
-    output.insert(0, v | m)
-    if len(output) > 1:
-        for b in range(0,len(output)):
-            output[b] = output[b] | 0x80
-    return output
-
-
 def OID_to_hex(oid_string):
     # takes an entire oid string and encodes an SNMP compliant hex chain
 
     if not oid_string.startswith(".1.3.6"):
         # this might be ok, I have witnessed ".0.0" be a value presented by an OID node.
-        #raise ValueError("Does not start as how we planned")
-        logging.warning(f"OID does not start with .1.3.6 - oid: {oid_string}")
+        logging.debug(f"OID does not start with .1.3.6 - oid: {oid_string}")
         
     oid_hex = bytearray()
     oid_hex.extend(b'\x2b')
-    #oid_hex.extend(int(15).to_bytes(1, 'big'))
     oid_array = oid_string.split('.')
     oid_array.pop(0)  # remove first blank
     oid_array.pop(0)  # next two are forgone as 0x2B
@@ -123,19 +106,16 @@ def OID_to_hex(oid_string):
         else:
             oid_hex.extend(encode_variable_length_quantity(int(node)))
 
-    #logging.debug(f'oid_hex is {oid_hex.hex()}')
     return oid_hex
 
 
 def get_tree_dict(Line):
-    # returns a dict 
+    # returns a dict
 
     oid_string = Line.split("=", 1)[0].strip()
     oid_hex = OID_to_hex(oid_string)
     #logging.debug (f"oid_string: {oid_string}")
     oid_type = Line.split("=", 1)[1].split(":", 1)[0].strip()
-
-    #logging.debug (f"oid_type: {oid_type} hex: {oid_type.encode('utf-8').hex()} vartype: {type(oid_type)}")
 
     if oid_type == "STRING":
         oid_value = Line.split("=", 1)[1].split(":", 1)[1].strip().strip('\"')
@@ -166,14 +146,11 @@ def get_tree_dict(Line):
 
     # populate the response cache: 
     oid_package = assemble_oid_package(oid_hex, oid_type, oid_value)    
-
-
-    #logging.debug (f"oid_value: {oid_value}")
     return {"oid_string": oid_string, "oid_hex": oid_hex, "oid_type": oid_type, "oid_value": oid_value, "oid_package": oid_package}
 
 
 def assemble_oid_package(oid_hex, oid_type, oid_value):
-    #  The oid package will be stored with the tree.  It is pre-calculated for speed.  It's construction and use is static.
+    #  The oid_package will be stored with the tree.  It is pre-calculated for speed.  It's construction and use is static.
 
     # Assemble the oid_value_package bytearray: type, length, and the value.
     oid_value_package = bytearray()
@@ -228,7 +205,7 @@ def assemble_oid_package(oid_hex, oid_type, oid_value):
 
     return oid_package
 
-#def formulate_get_response(request_id, community, oid_hex, oid_value, oid_type):
+
 def formulate_get_response(request_id, community, oid_package):
     # returns a prepared byte object for a non-final response to an SNMPwalk
     
@@ -240,7 +217,6 @@ def formulate_get_response(request_id, community, oid_package):
     ### LENGTHS ###
     
     # Initialise lengths to be built from the bottom up.
-    if DEBUG: logging.debug("Initialise lengths")
     length_all = 0x0
     length_community = 0x0
     length_to_end1_response = 0x0
@@ -296,7 +272,6 @@ def formulate_get_response(request_id, community, oid_package):
     datafill = bytearray()  # a blank
     datafill.append(0x30)  # 1 byte, start. 
     
-    logging.debug(f'encode is {encode_variable_length_quantity_allMSB1(length_all)} ')
     datafill.extend(encode_variable_length(length_all))  # variable length
 
     datafill.append(0x02)  # demarc, version
@@ -308,7 +283,6 @@ def formulate_get_response(request_id, community, oid_package):
     datafill.extend(community.encode('latin-1'))  # variable, eg. public
 
     datafill.append(0xA2)  # indicates RESPONSE, A0 is get-request, A1 is get-next-request , A2 is get_response
-    logging.debug(f'after 0xa2 length_to_end1_response is {length_to_end1_response} resultant is {encode_variable_length_quantity_allMSB1(length_to_end1_response)}')
     datafill.extend(encode_variable_length(length_to_end1_response))  # length of RESPONSE bytes remaining entirely
 
     datafill.append(0x02)  # request_id demarc
@@ -373,7 +347,7 @@ def extract_request_details(data):
         request_id = bytearray(4)
         for i in range(0,4):
             request_id[i] = data[cursor + i]
-        logging.info(f'Request ID: {int.from_bytes(request_id, "big")}')
+        if DEBUG: logging.debug(f'Request ID: {int.from_bytes(request_id, "big")}')
         if DEBUG: print_hex_nicely(request_id)
         cursor += 4
 
@@ -395,10 +369,6 @@ def extract_request_details(data):
 
     except Exception as e:
         logging.error(f'Problem: {e}')
-
-
-def formulate_end_of_mib(request_id, community, oid_hex, oid_value, oid_type):
-    pass
 
 
 def formulate_no_object_found(request_id, community, oid_hex, oid_value, oid_type):
@@ -424,8 +394,6 @@ def get_request_type(data):
     return request_type
 
 
-
-
 ## OID Tree Construction 
 tree = []
 count = 0
@@ -440,7 +408,7 @@ for line in Lines:
         logging.info(f"Problem importing this line: {line}".strip())
         problems += 1
 
-logging.info(f'Loaded file: problems: {problems} total reviewed: {count} tree size: {len(tree)}')
+logging.info(f'Loaded mimic file: problems: {problems} total reviewed: {count} tree size: {len(tree)}')
 
 
 ### Open a UDP socket
@@ -455,10 +423,12 @@ logging.info(f"Socket opened.  Listening on {UDP_IP} port {UDP_PORT}")
 ##  Listen for a request and respond.
 
 while True:
-    data, addr = sock.recvfrom(1460) # buffer size is 1024 bytes
-    
-    # diagnostics
-    logging.info("RECEIVED MESSAGE")
+    try:
+        data, addr = sock.recvfrom(1460) # buffer size is 1024 bytes
+    except Exception as e:
+        logging.warning(f'Problem with socket: {e}')
+
+    logging.debug("RECEIVED MESSAGE")
 
     # Validate the request 
     try: 
@@ -576,8 +546,9 @@ while True:
                 if DEBUG: logging.debug(f'Best match node depth: {matches} at tree cursor position {tree_cursor}')      
 
             # Sending a reply to client
+            sleep(DELAY * 0.001)  # configurable
             sock.sendto(datafill, addr)
-            logging.info('Response sent to client')
+            logging.debug('Response sent to client')
 
         else: 
             raise Exception("OIDrage: Unknown or Unsupported request_type")
