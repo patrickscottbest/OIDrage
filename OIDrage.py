@@ -2,7 +2,7 @@
 # Patrick Scott Best, 2022
 # https://github.com/patrickscottbest/OIDrage
 
-# Uses a snmpwalk to mimic an SNMP target.
+# Uses a snmpwalk text output to mimic an SNMP target.
 
 # References: 
 # UDP Comm https://wiki.python.org/moin/UdpCommunication#CA-60759983b77d9e5650a253e88b9ac4b5e607d69c_3
