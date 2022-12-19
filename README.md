@@ -1,9 +1,11 @@
 # OIDrage
 A lightweight SNMPv2c server for testing purposes.  Sends mimic responses of test data based on any snmpwalk.  Designed to scale.
 
+![OIDrage Logo](logo/png/logo-no-background.png?raw=true "OIDrage Logo")
+
 # Updates
-20221208 - Initiate Project - Complimentery to https://github.com/patrickscottbest/hammerOID
-20221218 - Ready for walks and for individual gets.
+- 20221208 - Initiate Project - Complimentery to https://github.com/patrickscottbest/hammerOID
+- 20221218 - Ready for walks and for individual gets, new logo.
 
 # About OIDrage
 A lightweight SNMPv2c setup to mimic thousands of datapoints for testing any snmp scraper, for example, a real cacti installation.  
