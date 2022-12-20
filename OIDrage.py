@@ -4,9 +4,6 @@
 
 # Uses a snmpwalk text output to mimic an SNMP target.
 
-# References: 
-# UDP Comm https://wiki.python.org/moin/UdpCommunication#CA-60759983b77d9e5650a253e88b9ac4b5e607d69c_3
-# SNMP RFCs https://datatracker.ietf.org/doc/html/rfc1906#section-8
 
 from time import sleep
 import socket
@@ -18,17 +15,17 @@ import logging
 
 encoder = asn1.Encoder()
 
-DEBUG = False  # faster to eval a boolean than concoct a string to be fired into the void.
+DEBUG = False  # faster to eval a boolean
 
 
-if not DEBUG: 
+if not DEBUG:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
 else:
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
 
 
 def print_hex_nicely(data):
-   
+
     # a nice debug way to print out HEX
     # similar to wireshark packet bytes
 
@@ -65,7 +62,7 @@ def encode_variable_length(length):  # type: (int) -> bytes
         return result
 
 
-def encode_variable_length_quantity(v:int) -> list:
+def encode_variable_length_quantity(v: int) -> list:
     # Used for OIDs
     # Break it up in groups of 7 bits starting from the lowest significant bit
     # For all the other groups of 7 bits than lowest one, set the MSB to 1
@@ -82,9 +79,9 @@ def encode_variable_length_quantity(v:int) -> list:
 def OID_to_hex(oid_string):
     # takes an entire oid string and encodes an SNMP compliant hex chain
 
-    if not oid_string.startswith(".1.3.6"):
-        # this might be ok, I have witnessed ".0.0" be a value presented by an OID node.
-        logging.debug(f"OID does not start with .1.3.6 - oid: {oid_string}")
+    # if not oid_string.startswith(".1.3.6"):
+    #     # this might be ok
+    #     logging.debug(f"OID does not start with .1.3.6 - oid: {oid_string}")
 
     oid_hex = bytearray()
     oid_hex.extend(b'\x2b')
@@ -208,9 +205,9 @@ def assemble_oid_package(oid_hex, oid_type, oid_value):
 def formulate_get_response(request_id, community, oid_package):
     # returns a prepared byte object for a non-final response to an SNMPwalk
 
-    ### LENGTHS ###
-    ### LENGTHS ###
-    ### LENGTHS ###
+    # LENGTHS ###
+    # LENGTHS ###
+    # LENGTHS ###
 
     # Initialise lengths to be built from the bottom up.
     length_all = 0x0
@@ -256,9 +253,9 @@ def formulate_get_response(request_id, community, oid_package):
 
     logging.debug(f'Completed templating lengths.  Running total of response size: {running_total}')
 
-    ### FILL ###
-    ### FILL ###
-    ### FILL ###
+    # FILL ###
+    # FILL ###
+    # FILL ###
 
     # Fill the template
     logging.debug('Filling the template')
@@ -338,7 +335,8 @@ def extract_request_details(data):
         if DEBUG: print_hex_nicely(request_id)
         cursor += 4
 
-        # Advance the cursor to the OID length definition, accounting for 11 bytes of unnecessary error codes and index.
+        # Advance the cursor to the OID length definition
+        # 11 bytes of fixed length error codes and index overhead.
         cursor += 11
 
         # oid_requested
@@ -357,9 +355,6 @@ def extract_request_details(data):
     except Exception as e:
         logging.error(f'Problem: {e}')
 
-
-def formulate_no_object_found(request_id, community, oid_hex, oid_value, oid_type):
-    pass
 
 
 def get_request_type(data):
@@ -467,7 +462,6 @@ def main(args):
                     if DEBUG: logging.debug(f"Formulating Valid Response based on element {t} {tree[t]}")
                 else:
                     if DEBUG: logging.debug("Formulating NO SUCH OBJECT")
-                    #### does not exist yet
                     noSuchObject_oid_package = assemble_oid_package(oid_requested,'noSuchObject', '')
                     datafill = formulate_get_response(request_id, community, noSuchObject_oid_package)
 
@@ -502,38 +496,37 @@ def main(args):
                         endOfMibView_oid_package = assemble_oid_package(oid_requested,'endOfMibView', '')
                         datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
                                     # Sending a reply to client
-                    
+
 
                 else:
-                    #### a direct match ooes not exist, let's find the closest.
-            
+                    # a direct match does not exist, let's find the closest.
+
                     game_on = True
                     tree_cursor = 0
-                    
+
                     # compare the requested OID bytes with branch's bytes to the maximum depth of the first part of the matched bytes.
                     while game_on:
 
-                    
+
                         # figure out how many bytes deep this comparison will be.
                         len_oid_branch = len(tree[tree_cursor]['oid_hex'])
                         if len_oid_branch < len_oid_requested:
                             # we don't want this record then... clearly wont be a match
                             #if DEBUG: logging.debug('length of branch is less than request.')
                             tree_cursor += 1
-                        
+
                         else:
                             # length of branch is longer or equal to length of request.
                             # roll through the bytes sequentially and see how many matched bytes we have 
                             matches = 0
                             for current_depth in range(0, len_oid_requested):
-                                
+
                                 if tree[tree_cursor]['oid_hex'][current_depth] == oid_requested[current_depth]:
                                     matches += 1
                                 else:
                                     break
-                            
-                            #logging.debug(f'matches: {matches} , len_oid_requested: {len_oid_requested}')
-                            # if this matches the length required, then we have identified a candidate record.
+
+                            # identified a candidate record.
                             if matches == len_oid_requested:
                                 if DEBUG: logging.debug(f'Identified a prefix match.  Element {tree_cursor}')
                                 
