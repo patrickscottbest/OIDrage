@@ -356,7 +356,6 @@ def extract_request_details(data):
         logging.error(f'Problem: {e}')
 
 
-
 def get_request_type(data):
     # Lookahead to determine the type of request.  Need to skep a variable length field to do it (community)
     # A0get-request A1get-next-request A2get-response
@@ -473,21 +472,36 @@ def main(args):
             elif request_type == 0xA1:
 
                 found = False
-                # Direct Match Shortcut
-                for t in range(0,len(tree)):
-                    #search the tree elements for a dict for a direct match. 
-                    if tree[t]['oid_hex'] == oid_requested:
-                        if DEBUG: logging.debug(f"Direct OID match at branch position {t}. ")
-                        found = True
-                        tree_cursor = t + 1  # next in tree
-                        break
-                    else:
-                        pass
+
+                # Requesting .1 or .1.3 Shortcut
+                if oid_requested == bytearray([0x01]):
+                    logging.debug("Shortcut for .1 - First node")
+                    found = True
+                    tree_cursor = 0
+                if oid_requested == bytearray([0x2b]):
+                    logging.debug("Shortcut for .1.3 - First node")
+                    found = True
+                    tree_cursor = 0
+                else:
+                    pass
+
+                if not found:
+                    # Direct Match Shortcut
+                    for t in range(0, len(tree)):
+                        # search tree elements for a dict for direct match.
+                        if tree[t]['oid_hex'] == oid_requested:
+                            if DEBUG: logging.debug(f"Direct OID match at position {t}. ")
+                            found = True
+                            tree_cursor = t + 1  # next in tree
+                            break
+                        else:
+                            pass
+                else:
+                    pass
 
                 if found:
-
                     if ((tree_cursor) < len(tree)):
-                        if DEBUG: logging.debug(f"Formulating Valid Response based on next element {tree_cursor} {tree[tree_cursor]}")
+                        if DEBUG: logging.debug(f"Formulating Response based on next element {tree_cursor} {tree[tree_cursor]}")
                         datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])                   
                     else: 
                         # next record would be beyond the MIB
@@ -495,8 +509,6 @@ def main(args):
                         # denote end of MIB by using the requested OID, and a value fill of 0x82 0x00
                         endOfMibView_oid_package = assemble_oid_package(oid_requested,'endOfMibView', '')
                         datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
-                                    # Sending a reply to client
-
 
                 else:
                     # a direct match does not exist, let's find the closest.

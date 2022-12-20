@@ -22,11 +22,13 @@ Allows various configuration inputs.  Until command line syntax available, use v
 - specify mimic-file, or use included.
 - response delay (in ms, default 0, recommended 100 for WAN emulation)
 - Interface - (defualt lo at 127.0.0.1)
-- UDP Port (default 514)
+- UDP Port (default 161)
+
+For complete features, run "python3 OIDrage.py -h"
 
 # Implementation
 Create a mimic tree using an snmpwalk or use the included default (a linux system)
-Python script can run on a singular host, default binding to 127.0.0.1 on standard port 514.
+Python script can run on a singular host, default binding to 127.0.0.1 on standard port 161.
 Values returned are static.
 A python script designed to make use of raw UDP port message and answer .
 
@@ -34,6 +36,7 @@ A python script designed to make use of raw UDP port message and answer .
 Command line arguments.
 Accomodate bulk-requests.
 "Wiggle" of common parameters (cpu / mem / interface).
+Custom hostnames per instance.
 Timeticks will move upwards.
 
 
