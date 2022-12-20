@@ -11,15 +11,16 @@
 from time import sleep
 import socket
 import asn1.asn1 as asn1
-import ipaddress # makes this program python3.3 required
+import ipaddress  # python3.3 required
 import argparse
 import sys
+import logging
 
 encoder = asn1.Encoder()
 
-DEBUG = False
+DEBUG = False  # faster to eval a boolean than concoct a string to be fired into the void.
 
-import logging
+
 if not DEBUG: 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
 else:
@@ -27,7 +28,9 @@ else:
 
 
 def print_hex_nicely(data):
-    ## just a nice debug way to print out HEX, similar to wireshark packet bytes
+   
+    # a nice debug way to print out HEX
+    # similar to wireshark packet bytes
 
     count = 1
     nice_hex = ""
@@ -61,6 +64,7 @@ def encode_variable_length(length):  # type: (int) -> bytes
             result.extend(bytes([val]))
         return result
 
+
 def encode_variable_length_quantity(v:int) -> list:
     # Used for OIDs
     # Break it up in groups of 7 bits starting from the lowest significant bit
@@ -81,7 +85,7 @@ def OID_to_hex(oid_string):
     if not oid_string.startswith(".1.3.6"):
         # this might be ok, I have witnessed ".0.0" be a value presented by an OID node.
         logging.debug(f"OID does not start with .1.3.6 - oid: {oid_string}")
-        
+
     oid_hex = bytearray()
     oid_hex.extend(b'\x2b')
     oid_array = oid_string.split('.')
@@ -89,9 +93,8 @@ def OID_to_hex(oid_string):
     oid_array.pop(0)  # next two are forgone as 0x2B
     oid_array.pop(0)  # next two are forgone as 0x2B
 
-
     for node in oid_array:
-        #logging.debug (f"node {node}")
+        # special handling for nodes > 127
         if (int(node)) < 128:
             oid_hex.extend(int(node).to_bytes(1, 'big'))
         else:
@@ -105,7 +108,6 @@ def get_tree_dict(Line):
 
     oid_string = Line.split("=", 1)[0].strip()
     oid_hex = OID_to_hex(oid_string)
-    #logging.debug (f"oid_string: {oid_string}")
     oid_type = Line.split("=", 1)[1].split(":", 1)[0].strip()
 
     if oid_type == "STRING":
@@ -137,7 +139,11 @@ def get_tree_dict(Line):
 
     # populate the response cache: 
     oid_package = assemble_oid_package(oid_hex, oid_type, oid_value)    
-    return {"oid_string": oid_string, "oid_hex": oid_hex, "oid_type": oid_type, "oid_value": oid_value, "oid_package": oid_package}
+    return {"oid_string": oid_string,
+            "oid_hex": oid_hex,
+            "oid_type": oid_type,
+            "oid_value": oid_value,
+            "oid_package": oid_package}
 
 
 def assemble_oid_package(oid_hex, oid_type, oid_value):
@@ -146,11 +152,11 @@ def assemble_oid_package(oid_hex, oid_type, oid_value):
     # Assemble the oid_value_package bytearray: type, length, and the value.
     oid_value_package = bytearray()
 
-    if (oid_type=="endOfMibView"):  # special, only used for dynamic calling of the assemble_oid_package, not the initial cache building
+    if (oid_type == "endOfMibView"):  # special, only used for dynamic calling of the assemble_oid_package, not the initial cache building
         oid_value_package.append(0x82)
         oid_value_package.append(0x00)
 
-    elif (oid_type=="noSuchObject"):  # special, only used for dynamic calling of the assemble_oid_package, not the initial cache building
+    elif (oid_type == "noSuchObject"):  # special, only used for dynamic calling of the assemble_oid_package, not the initial cache building
         oid_value_package.append(0x80)
         oid_value_package.append(0x00)
 
@@ -158,7 +164,7 @@ def assemble_oid_package(oid_hex, oid_type, oid_value):
         encoder.start()
         encoder.write(oid_value)
         oid_value_package = encoder.output()
-    
+
     elif ((isinstance(oid_value, int)) & (oid_type == "IpAddress")):
         oid_value_package.append(0x40) 
         oid_value_package.append(0x04)
@@ -178,7 +184,7 @@ def assemble_oid_package(oid_hex, oid_type, oid_value):
         oid_value_package.append(0x06)
         oid_value_package.append(len(OID_to_hex(oid_value)))
         oid_value_package.extend(OID_to_hex(oid_value))
-    
+
     elif isinstance(oid_value, str):
         encoder.start()
         encoder.write(oid_value, nr=0x04)
@@ -188,29 +194,24 @@ def assemble_oid_package(oid_hex, oid_type, oid_value):
         logging.error("Unknown OID_Value encoding method.")
         raise Exception("Could not determine how to encode this oid_value.")
 
-    #logging.debug(f'oid_value_package is {oid_value_package}')
-
     # assemble the total package:
     oid_package = bytearray()
 
     oid_package.append(0x06)  # 0x06 means this is an OID
     oid_package.extend(encode_variable_length(len(oid_hex)))  # length of the OID to follow
     oid_package.extend(bytes(oid_hex))  # the actual 1.3.6.....oid
-    oid_package.extend(oid_value_package)  # the entire value package: value_type, value_length, value
+    oid_package.extend(oid_value_package)  # (value_type, value_length, value)
 
     return oid_package
 
 
 def formulate_get_response(request_id, community, oid_package):
     # returns a prepared byte object for a non-final response to an SNMPwalk
-    
-    #if DEBUG: logging.debug(f'Stored oid type: {oid_type}.  Pythonic type of oid_value: {type(oid_value)}')
-
 
     ### LENGTHS ###
     ### LENGTHS ###
     ### LENGTHS ###
-    
+
     # Initialise lengths to be built from the bottom up.
     length_all = 0x0
     length_community = 0x0
@@ -218,17 +219,14 @@ def formulate_get_response(request_id, community, oid_package):
     length_to_end_binding_ONE = 0x0
     length_to_end_binding_ALL = 0x0
     length_to_end_of_oid = 0x0 
-    #length_to_end4_value = 0x0  # not needed anymore due to ASN1
-
-
+    # length_to_end4_value = 0x0  # not needed anymore due to ASN1
 
     # Encrich lengths from bottom up.
     running_total = 0
     if DEBUG: logging.debug('Enrich lengths from bottom up')
- 
+
     # Reserving space for the oid_package as a whole
     running_total += len(oid_package)
-
 
     length_to_end_binding_ONE = running_total # length of variable-bindings ONE bytes remaining
     running_total += len(encode_variable_length(running_total))  # number of length bytes - could be a variable length if > 127
@@ -245,7 +243,7 @@ def formulate_get_response(request_id, community, oid_package):
     length_to_end1_response = running_total
     running_total += len(encode_variable_length(running_total))  # length byte placeholder 
     running_total += 1  # RESPONSE 0xA2
-    
+
     length_community = len(community)
     running_total += len(community)
     running_total += len(encode_variable_length(length_community))  # demarc, length byte placeholder  
@@ -265,8 +263,8 @@ def formulate_get_response(request_id, community, oid_package):
     # Fill the template
     logging.debug('Filling the template')
     datafill = bytearray()  # a blank
-    datafill.append(0x30)  # 1 byte, start. 
-    
+    datafill.append(0x30)  # 1 byte, start.
+
     datafill.extend(encode_variable_length(length_all))  # variable length
 
     datafill.append(0x02)  # demarc, version
@@ -300,16 +298,16 @@ def formulate_get_response(request_id, community, oid_package):
 
     logging.debug(f'Datafill As Prepared:')
     if DEBUG: print_hex_nicely(datafill)
-    return(datafill)
+    return datafill
 
 
 def request_valid(data):
     # Examines that a request is valid and returns BOOL
     # <FALLTHROUGH>
-    
+
     if ((data[0] != 0x30)  # snmp request type
-    | (data[2] != 0x2) # version demarc
-    | (data[3] != 0x1)):  # version
+        | (data[2] != 0x2)  # version demarc
+        | (data[3] != 0x1)):  # version
         return False
     else:
         return True
@@ -317,8 +315,7 @@ def request_valid(data):
 
 def extract_request_details(data):
     # Returns what is needed to reformulate the overhead for a valid response.
-    # assumes a walk
-    
+
     try:
         # Community string
         if data[5] == 4:  # demarc for community  
@@ -327,15 +324,15 @@ def extract_request_details(data):
             for i in range(comm_length):
                 community += chr(data[7+i])
             logging.debug(f'Community String: {community}')
-            
-        else: 
+
+        else:
             raise Exception
 
         # request ID
         cursor = 6 + comm_length + 5
 
         request_id = bytearray(4)
-        for i in range(0,4):
+        for i in range(0, 4):
             request_id[i] = data[cursor + i]
         if DEBUG: logging.debug(f'Request ID: {int.from_bytes(request_id, "big")}')
         if DEBUG: print_hex_nicely(request_id)
@@ -371,7 +368,7 @@ def get_request_type(data):
 
     if DEBUG: logging.debug('getting request type')
 
-    #cursor skips to variable-length-integer-byte 
+    # cursor skips to variable-length-integer-byte
     cursor = 0 
     cursor += 6  # the 6th byte is the value we also want
 
@@ -383,9 +380,10 @@ def get_request_type(data):
     if DEBUG: logging.debug(f'request type determined to be {hex(request_type)}')
     return request_type
 
+
 def main(args):
 
-    if args.community == None: 
+    if args.community is None:
         required_community = False
     else:
         required_community = True
@@ -401,7 +399,6 @@ def main(args):
     # Strips the newline character
     for line in Lines:
         count += 1
-        #if DEBUG: logging.debug("Importing Line{}: {}".format(count, line.strip()))
         try:
             tree.append(get_tree_dict(line))
         except Exception as e:
@@ -410,28 +407,24 @@ def main(args):
 
     logging.info(f'Loaded mimic file. problems: {problems}, total reviewed: {count}, tree size: {len(tree)}')
 
-
-    ### Open a UDP socket
-
-
-    sock = socket.socket(socket.AF_INET, # Internet
-                        socket.SOCK_DGRAM) # UDP
+    # Open a UDP socket
+    sock = socket.socket(socket.AF_INET,  # Internet
+                         socket.SOCK_DGRAM)  # UDP
     sock.bind((args.ipaddress, args.port))
+    logging.info(f"Socket opened.  Listening {args.ipaddress} port {args.port}")
 
-    logging.info(f"Socket opened.  Listening on {args.ipaddress} port {args.port}")
-
-    ##  Listen for a request and respond.
+    # Listen for a request and respond.
 
     while True:
         try:
-            data, addr = sock.recvfrom(1460) # buffer size is 1024 bytes
+            data, addr = sock.recvfrom(1460)  # buffer size is 1024 bytes
         except Exception as e:
             logging.warning(f'Problem with socket: {e}')
 
         logging.debug("RECEIVED MESSAGE")
 
-        # Validate the request 
-        try: 
+        # Validate the request
+        try:
             if not request_valid(data):
                 raise Exception("Request is Not Valid.")
             else:
@@ -440,7 +433,7 @@ def main(args):
 
             # Extract the artifacts we need to construct a response
             community, request_id, oid_requested = extract_request_details(data)
-            
+
             # See if mandatory community string was set.
             if required_community:
                 if not (community == args.community):
@@ -449,7 +442,7 @@ def main(args):
                 pass
 
             request_type = get_request_type(data)
-            
+
             len_oid_requested = len(oid_requested)
             datafill = bytearray()
             tree_cursor = 0
@@ -460,7 +453,7 @@ def main(args):
                 found = False
                 # Direct Match Shortcut
                 for t in range(0,len(tree)):
-                    #search the tree elements for a dict for a direct match. 
+                    #search the tree elements for a dict for a direct match.
                     if tree[t]['oid_hex'] == oid_requested:
                         if DEBUG: logging.debug(f"Direct OID match at branch position {t}. ")
                         found = True
@@ -469,7 +462,7 @@ def main(args):
                     else:
                         pass
 
-                if found:      
+                if found: 
                     datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])
                     if DEBUG: logging.debug(f"Formulating Valid Response based on element {t} {tree[t]}")
                 else:
@@ -498,7 +491,7 @@ def main(args):
                         pass
 
                 if found:
-                    
+
                     if ((tree_cursor) < len(tree)):
                         if DEBUG: logging.debug(f"Formulating Valid Response based on next element {tree_cursor} {tree[tree_cursor]}")
                         datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])                   
@@ -569,6 +562,7 @@ def main(args):
 
         except Exception as e:
             logging.error(f'Main Loop Problem: {e}')
+
 
 if __name__ == '__main__':
     logging.info("OIDrage by Patrick Scott Best")
