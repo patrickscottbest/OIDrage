@@ -12,6 +12,10 @@ from time import sleep
 import socket
 import asn1.asn1 as asn1
 import ipaddress # makes this program python3.3 required
+import argparse
+import sys
+
+encoder = asn1.Encoder()
 
 DEBUG = False
 
@@ -20,19 +24,6 @@ if not DEBUG:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
 else:
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
-
-INPUT_FILE = 'mimic.txt'
-DELAY = 0  # milliseconds delay before sending response
-UDP_IP = "127.0.0.1"   # this will be the default.
-UDP_IP = "10.0.1.124"  # test wired
-UDP_IP = "10.0.1.178"  # test wireless
-UDP_PORT = 5005
-
-logging.info("Opening mimic file")
-file1 = open(INPUT_FILE, 'r')
-Lines = file1.readlines()
-
-encoder = asn1.Encoder()
 
 
 def print_hex_nicely(data):
@@ -155,8 +146,12 @@ def assemble_oid_package(oid_hex, oid_type, oid_value):
     # Assemble the oid_value_package bytearray: type, length, and the value.
     oid_value_package = bytearray()
 
-    if (oid_type=="endOfMibView"):  # this is really only used for dynamic calling of the assemble_oid_package, not the initial cache building
+    if (oid_type=="endOfMibView"):  # special, only used for dynamic calling of the assemble_oid_package, not the initial cache building
         oid_value_package.append(0x82)
+        oid_value_package.append(0x00)
+
+    elif (oid_type=="noSuchObject"):  # special, only used for dynamic calling of the assemble_oid_package, not the initial cache building
+        oid_value_package.append(0x80)
         oid_value_package.append(0x00)
 
     elif ((isinstance(oid_value, int)) & (oid_type == "Gauge32")):
@@ -261,7 +256,7 @@ def formulate_get_response(request_id, community, oid_package):
     # length byte placeholder, does not count
     # 0x30 , start, does not count
 
-    logging.debug(f'Running total of response size: {running_total}')
+    logging.debug(f'Completed templating lengths.  Running total of response size: {running_total}')
 
     ### FILL ###
     ### FILL ###
@@ -301,11 +296,6 @@ def formulate_get_response(request_id, community, oid_package):
     datafill.append(0x30)  # variable-bindings
     datafill.extend(encode_variable_length(length_to_end_binding_ONE))  # length of variable-bindings bytes remaining
 
-    # datafill.append(0x06)  # OID number one
-    # datafill.append(length_to_end_of_oid)  # length of the OID to follow
-    # datafill.extend(oid_hex)  # variable, the encoded oid bytes, eg 0x2b plus 6.1.2.1...  see RFC spec
-    # datafill.extend(oid_value_package)
-
     datafill.extend(oid_package)
 
     logging.debug(f'Datafill As Prepared:')
@@ -317,9 +307,9 @@ def request_valid(data):
     # Examines that a request is valid and returns BOOL
     # <FALLTHROUGH>
     
-    if ((data[0] != 30)  # snmp request type
-    | (data[2] != 2) # version demarc
-    | (data[3] != 1)):  # version
+    if ((data[0] != 0x30)  # snmp request type
+    | (data[2] != 0x2) # version demarc
+    | (data[3] != 0x1)):  # version
         return False
     else:
         return True
@@ -393,165 +383,202 @@ def get_request_type(data):
     if DEBUG: logging.debug(f'request type determined to be {hex(request_type)}')
     return request_type
 
+def main(args):
 
-## OID Tree Construction 
-tree = []
-count = 0
-problems = 0
-# Strips the newline character
-for line in Lines:
-    count += 1
-    #if DEBUG: logging.debug("Importing Line{}: {}".format(count, line.strip()))
-    try:
-        tree.append(get_tree_dict(line))
-    except:
-        logging.info(f"Problem importing this line: {line}".strip())
-        problems += 1
+    if args.community == None: 
+        required_community = False
+    else:
+        required_community = True
 
-logging.info(f'Loaded mimic file: problems: {problems} total reviewed: {count} tree size: {len(tree)}')
+    logging.info("Opening mimic file")
+    file1 = open(args.inputfile, 'r')
+    Lines = file1.readlines()
+
+    ## OID Tree Construction 
+    tree = []
+    count = 0
+    problems = 0
+    # Strips the newline character
+    for line in Lines:
+        count += 1
+        #if DEBUG: logging.debug("Importing Line{}: {}".format(count, line.strip()))
+        try:
+            tree.append(get_tree_dict(line))
+        except Exception as e:
+            logging.info(f"Problem: {e} while importing this line: {line}".strip())
+            problems += 1
+
+    logging.info(f'Loaded mimic file. problems: {problems}, total reviewed: {count}, tree size: {len(tree)}')
 
 
-### Open a UDP socket
+    ### Open a UDP socket
 
 
-sock = socket.socket(socket.AF_INET, # Internet
-                     socket.SOCK_DGRAM) # UDP
-sock.bind((UDP_IP, UDP_PORT))
+    sock = socket.socket(socket.AF_INET, # Internet
+                        socket.SOCK_DGRAM) # UDP
+    sock.bind((args.ipaddress, args.port))
 
-logging.info(f"Socket opened.  Listening on {UDP_IP} port {UDP_PORT}")
+    logging.info(f"Socket opened.  Listening on {args.ipaddress} port {args.port}")
 
-##  Listen for a request and respond.
+    ##  Listen for a request and respond.
 
-while True:
-    try:
-        data, addr = sock.recvfrom(1460) # buffer size is 1024 bytes
-    except Exception as e:
-        logging.warning(f'Problem with socket: {e}')
+    while True:
+        try:
+            data, addr = sock.recvfrom(1460) # buffer size is 1024 bytes
+        except Exception as e:
+            logging.warning(f'Problem with socket: {e}')
 
-    logging.debug("RECEIVED MESSAGE")
+        logging.debug("RECEIVED MESSAGE")
 
-    # Validate the request 
-    try: 
-        if not request_valid:
-            raise Exception("Request is Not Valid.")
-        else:
-            if DEBUG: logging.debug("Request is Valid.")
-            pass
-
-        # Extract the artifacts we need to construct a response
-        community, request_id, oid_requested = extract_request_details(data)
-        request_type = get_request_type(data)
-        
-        len_oid_requested = len(oid_requested)
-        datafill = bytearray()
-        tree_cursor = 0
-
-        # get-request
-        if request_type == 0xA0:
-
-            found = False
-            # Direct Match Shortcut
-            for t in range(0,len(tree)):
-                #search the tree elements for a dict for a direct match. 
-                if tree[t]['oid_hex'] == oid_requested:
-                    if DEBUG: logging.debug(f"Direct OID match at branch position {t}. ")
-                    found = True
-                    tree_cursor = t
-                    break
-                else:
-                    pass
-
-            if found:      
-                datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])
-                if DEBUG: logging.debug(f"Formulating Valid Response based on element {t} {tree[t]}")
+        # Validate the request 
+        try: 
+            if not request_valid(data):
+                raise Exception("Request is Not Valid.")
             else:
-                if DEBUG: logging.debug("Formulating OID NOT FOUND")
-                #### does not exist yet
-                endOfMibView_oid_package = assemble_oid_package(oid_requested,'endOfMibView', '')
-                datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
+                if DEBUG: logging.debug("Request is Valid.")
+                pass
 
-        # get-next-request
-        elif request_type == 0xA1:
-
-            found = False
-            # Direct Match Shortcut
-            for t in range(0,len(tree)):
-                #search the tree elements for a dict for a direct match. 
-                if tree[t]['oid_hex'] == oid_requested:
-                    if DEBUG: logging.debug(f"Direct OID match at branch position {t}. ")
-                    found = True
-                    tree_cursor = t + 1  # next in tree
-                    break
-                else:
-                    pass
-
-            if found:
-                
-                if ((tree_cursor) < len(tree)):
-                    if DEBUG: logging.debug(f"Formulating Valid Response based on next element {tree_cursor} {tree[tree_cursor]}")
-                    datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])                   
-                else: 
-                    # next record would be beyond the MIB
-                    if DEBUG: logging.debug("Formulating endOfMibView")
-                    # denote end of MIB by using the requested OID, and a value fill of 0x82 0x00
-                    endOfMibView_oid_package = assemble_oid_package(oid_requested,'endOfMibView', '')
-                    datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
-                
+            # Extract the artifacts we need to construct a response
+            community, request_id, oid_requested = extract_request_details(data)
+            
+            # See if mandatory community string was set.
+            if required_community:
+                if not (community == args.community):
+                    raise ValueError("Community String Incorrect.")
             else:
-                #### a direct match ooes not exist, let's find the closest.
-        
-                game_on = True
-                tree_cursor = 0
-                
-                # compare the requested OID bytes with branch's bytes to the maximum depth of the first part of the matched bytes.
-                while game_on:
+                pass
 
-                
-                    # figure out how many bytes deep this comparison will be.
-                    len_oid_branch = len(tree[tree_cursor]['oid_hex'])
-                    if len_oid_branch < len_oid_requested:
-                        # we don't want this record then... clearly wont be a match
-                        #if DEBUG: logging.debug('length of branch is less than request.')
-                        tree_cursor += 1
-                    
+            request_type = get_request_type(data)
+            
+            len_oid_requested = len(oid_requested)
+            datafill = bytearray()
+            tree_cursor = 0
+
+            # get-request
+            if request_type == 0xA0:
+
+                found = False
+                # Direct Match Shortcut
+                for t in range(0,len(tree)):
+                    #search the tree elements for a dict for a direct match. 
+                    if tree[t]['oid_hex'] == oid_requested:
+                        if DEBUG: logging.debug(f"Direct OID match at branch position {t}. ")
+                        found = True
+                        tree_cursor = t
+                        break
                     else:
-                        # length of branch is longer or equal to length of request.
-                        # roll through the bytes sequentially and see how many matched bytes we have 
-                        matches = 0
-                        for current_depth in range(0, len_oid_requested):
-                            
-                            if tree[tree_cursor]['oid_hex'][current_depth] == oid_requested[current_depth]:
-                                matches += 1
-                            else:
-                                break
-                        
-                        #logging.debug(f'matches: {matches} , len_oid_requested: {len_oid_requested}')
-                        # if this matches the length required, then we have identified a candidate record.
-                        if matches == len_oid_requested:
-                            if DEBUG: logging.debug(f'Identified a prefix match.  Element {tree_cursor}')
-                            
-                            datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])
-                            game_on = False
-                        else:
+                        pass
+
+                if found:      
+                    datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])
+                    if DEBUG: logging.debug(f"Formulating Valid Response based on element {t} {tree[t]}")
+                else:
+                    if DEBUG: logging.debug("Formulating NO SUCH OBJECT")
+                    #### does not exist yet
+                    noSuchObject_oid_package = assemble_oid_package(oid_requested,'noSuchObject', '')
+                    datafill = formulate_get_response(request_id, community, noSuchObject_oid_package)
+
+                sleep(args.delay * 0.001)  # configurable
+                sock.sendto(datafill, addr)
+                logging.debug('Response sent to client')
+
+            # get-next-request
+            elif request_type == 0xA1:
+
+                found = False
+                # Direct Match Shortcut
+                for t in range(0,len(tree)):
+                    #search the tree elements for a dict for a direct match. 
+                    if tree[t]['oid_hex'] == oid_requested:
+                        if DEBUG: logging.debug(f"Direct OID match at branch position {t}. ")
+                        found = True
+                        tree_cursor = t + 1  # next in tree
+                        break
+                    else:
+                        pass
+
+                if found:
+                    
+                    if ((tree_cursor) < len(tree)):
+                        if DEBUG: logging.debug(f"Formulating Valid Response based on next element {tree_cursor} {tree[tree_cursor]}")
+                        datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])                   
+                    else: 
+                        # next record would be beyond the MIB
+                        if DEBUG: logging.debug("Formulating endOfMibView")
+                        # denote end of MIB by using the requested OID, and a value fill of 0x82 0x00
+                        endOfMibView_oid_package = assemble_oid_package(oid_requested,'endOfMibView', '')
+                        datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
+                                    # Sending a reply to client
+                    
+
+                else:
+                    #### a direct match ooes not exist, let's find the closest.
+            
+                    game_on = True
+                    tree_cursor = 0
+                    
+                    # compare the requested OID bytes with branch's bytes to the maximum depth of the first part of the matched bytes.
+                    while game_on:
+
+                    
+                        # figure out how many bytes deep this comparison will be.
+                        len_oid_branch = len(tree[tree_cursor]['oid_hex'])
+                        if len_oid_branch < len_oid_requested:
+                            # we don't want this record then... clearly wont be a match
+                            #if DEBUG: logging.debug('length of branch is less than request.')
                             tree_cursor += 1
+                        
+                        else:
+                            # length of branch is longer or equal to length of request.
+                            # roll through the bytes sequentially and see how many matched bytes we have 
+                            matches = 0
+                            for current_depth in range(0, len_oid_requested):
+                                
+                                if tree[tree_cursor]['oid_hex'][current_depth] == oid_requested[current_depth]:
+                                    matches += 1
+                                else:
+                                    break
+                            
+                            #logging.debug(f'matches: {matches} , len_oid_requested: {len_oid_requested}')
+                            # if this matches the length required, then we have identified a candidate record.
+                            if matches == len_oid_requested:
+                                if DEBUG: logging.debug(f'Identified a prefix match.  Element {tree_cursor}')
+                                
+                                datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])
+                                game_on = False
+                            else:
+                                tree_cursor += 1
 
-                        if tree_cursor == (len(tree) - 1):
-                            # we are at the end of the search.  Time to send back a specially crafted endOfMibView packet. 
-                            # essentially repeating back the query with data 0x82 with 0x00 length
-                            endOfMibView_oid_package = assemble_oid_package(oid_requested,'endOfMibView', '')
-                            datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
-                            game_on = False
+                            if tree_cursor == (len(tree) - 1):
+                                # we are at the end of the search.  Time to send back a specially crafted endOfMibView packet. 
+                                # essentially repeating back the query with data 0x82 with 0x00 length
+                                endOfMibView_oid_package = assemble_oid_package(oid_requested,'endOfMibView', '')
+                                datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
+                                game_on = False
 
 
-                if DEBUG: logging.debug(f'Best match node depth: {matches} at tree cursor position {tree_cursor}')      
+                    if DEBUG: logging.debug(f'Best match node depth: {matches} at tree cursor position {tree_cursor}')      
 
-            # Sending a reply to client
-            sleep(DELAY * 0.001)  # configurable
-            sock.sendto(datafill, addr)
-            logging.debug('Response sent to client')
+                # Sending a reply to client
+                sleep(args.delay * 0.001)  # configurable
+                sock.sendto(datafill, addr)
+                logging.debug('Response sent to client')
 
-        else: 
-            raise Exception("OIDrage: Unknown or Unsupported request_type")
+            else: 
+                raise Exception("OIDrage: Unknown or Unsupported request_type")
 
-    except Exception as e:
-        logging.error(f'Exception: {e}')
+        except Exception as e:
+            logging.error(f'Main Loop Problem: {e}')
+
+if __name__ == '__main__':
+    logging.info("OIDrage by Patrick Scott Best")
+    parser = argparse.ArgumentParser(description='OIDrage SNMPd Mimic Server')
+    parser.add_argument('-f', '--inputfile', type=str, help="Input file. [mimic.txt]", default="mimic.txt")
+    parser.add_argument('-i', '--ipaddress', type=str, help="IP Address.  [127.0.0.1]", default="10.0.1.124")
+    parser.add_argument('-p', '--port', type=int, help="UDP port number to bind to. [5005]", default=5005)
+    parser.add_argument('-d', '--delay', type=int, help="Response delay, in milliseconds.  [0]", default=0)
+    parser.add_argument('-c', '--community', type=str, help="Require a specific community string from client. [*]")
+    sys.exit(main(parser.parse_args())) 
+else: 
+    logging.error("OIDrage must be called from command line.")
+    raise Exception("OIDrage must be called from command line.")

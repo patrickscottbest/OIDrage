@@ -15,6 +15,8 @@ This software is designed to be raw, quick, and not feature-bloated.  It can mim
 The input file is a valid snmpwalk output (numerical).  
 Either provide your own mimic.txt using "snmpwalk -v2c -c public -On 127.0.0.1 .1 > mimic.txt", or just use the default provided.
 
+By default, any community string will work.  Alternatively, one can be set as required.
+
 # Configuration
 Allows various configuration inputs.  Until command line syntax available, use variables top of OIDrage.py.
 - specify mimic-file, or use included.
