@@ -6,11 +6,14 @@ A lightweight SNMPv2c server for testing purposes.  Sends mimic responses of tes
 # Updates
 - 20221208 - Initiate Project - Complimentery to https://github.com/patrickscottbest/hammerOID
 - 20221218 - Ready for walks and for individual gets, new logo.
+- 20221221 - Ready for bulk.  Tested against Cacti.
 
 # About OIDrage
-A lightweight SNMPv2c setup to mimic thousands of datapoints for testing any snmp scraper, for example, a real cacti installation.  
+A lightweight SNMPv2c setup to mimic thousands of datapoints for testing any snmp scraper, for example, a real cacti installation or a cli snmp transaction.  
 
-This software is designed to be raw, quick, and not feature-bloated.  It can mimic machines for load testing and KPI evaluations.  The usual PySNMP libraries are not used.  This software is stand-alone and requires Python 3.3+ for IP address module support.
+This software is designed to be raw, quick, and not feature-bloated.  It can mimic machines for load testing and KPI evaluations.  
+
+The usual PySNMP libraries are not used.  This software is stand-alone and requires Python 3.3+ for IP address module support.
 
 The input file is a valid snmpwalk output (numerical).  
 Either provide your own mimic.txt using "snmpwalk -v2c -c public -On 127.0.0.1 .1 > mimic.txt", or just use the default provided.
