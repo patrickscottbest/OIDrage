@@ -1,4 +1,4 @@
-# OIDrage.py 
+# OIDrage.py
 # Patrick Scott Best, 2022
 # https://github.com/patrickscottbest/OIDrage
 
@@ -7,21 +7,17 @@
 
 from time import sleep
 import socket
+import os
 import asn1.asn1 as asn1
 import ipaddress  # python3.3 required
 import argparse
 import sys
 import logging
+from ieee754 import IEEE754
 
 encoder = asn1.Encoder()
 
-DEBUG = False  # faster to eval a boolean
-
-
-if not DEBUG:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
-else:
-    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
 
 
 def print_hex_nicely(data):
@@ -43,6 +39,13 @@ def print_hex_nicely(data):
 
         count += 1
     logging.debug(nice_hex)
+
+
+def float_to_bin(num):
+    return bin(struct.unpack('!I', struct.pack('!f', num))[0])[2:].zfill(32)
+
+def bin_to_float(binary):
+    return struct.unpack('!f',struct.pack('!I', int(binary, 2)))[0]
 
 
 def encode_variable_length(length):  # type: (int) -> bytes
@@ -127,11 +130,24 @@ def get_tree_dict(Line):
         oid_value = Line.split("=", 1)[1].split(":")[1].strip()
     elif oid_type == "Timeticks":
         oid_value = int(Line.split("=", 1)[1].split(":", 1)[1].strip().split("(")[1].split(")", 1)[0])
+    elif oid_type == "Opaque":
+        # https://stackoverflow.com/questions/35276556/snmpsharpnet-opaque-float
+        # IEEE 754 32-bit float
+        opaque_value = Line.split("=", 1)[1].split(":", 1)[1].strip()
+        if opaque_value.split(":")[0] == "Float":
+            float_value = float(opaque_value.split(":")[1].strip())
+            ieee_float = IEEE754(float_value)
+            oid_value = bytearray()
+            oid_value.append(0x04)
+            oid_value.extend(ieee_float)
+        else:
+            logging.warning(f"We do not know how to deal with this opaque value yet.")
+        pass
     elif oid_type == "\"\"":
         oid_type = "_none_"
         oid_value = ""
     else:
-        logging.warning(f"Unknown OID type: {oid_type}.")
+        logging.warning(f"Unknown OID type: {oid_type}")
         raise Exception
 
     # populate the response cache: 
@@ -158,13 +174,20 @@ def assemble_oid_package(oid_hex, oid_type, oid_value):
         oid_value_package.append(0x80)
         oid_value_package.append(0x00)
 
+    elif (oid_type == "Opaque"):
+        oid_value_package.append(0x44)
+        oid_value_package.append(0x07)
+        oid_value_package.append(0x9F)
+        oid_value_package.append(0x78)
+        oid_value_package.extend(oid_value)
+
     elif ((isinstance(oid_value, int)) & (oid_type == "Gauge32")):
         encoder.start()
         encoder.write(oid_value)
         oid_value_package = encoder.output()
 
     elif ((isinstance(oid_value, int)) & (oid_type == "IpAddress")):
-        oid_value_package.append(0x40) 
+        oid_value_package.append(0x40)
         oid_value_package.append(0x04)
         oid_value_package.extend(oid_value.to_bytes(4, 'big'))
 
@@ -452,9 +475,9 @@ def find_closest_match(tree, oid_requested):
                 break
             else:
                 pass
-    
-            if DEBUG:
-                logging.debug(f'found: {found}, cursor: {tree_cursor}')      
+
+    if DEBUG:
+        logging.debug(f'found: {found}, cursor: {tree_cursor}')      
 
     return found, tree_cursor
 
@@ -481,16 +504,20 @@ def find_direct_match(tree, oid_requested):
 
 def main(args):
 
-    if args.community is None:
-        required_community = False
-    else:
-        required_community = True
+    if args.inputfile is None:
+        args.inputfile = os.getenv("INPUTFILE", default="mimic.txt")
+    if args.ipaddress is None:
+        args.ipaddress = os.getenv("IPADDRESS", default="127.0.0.1")
+    if args.port is None:
+        args.port = os.getenv("PORT", default=5005)
+    if args.delay is None:
+        args.delay = os.getenv("DELAY", default=0)
 
-    logging.info("Opening mimic file")
+    logging.info(f"Opening Mimic File {args.inputfile}")
     file1 = open(args.inputfile, 'r')
     Lines = file1.readlines()
 
-    ## OID Tree Construction 
+    # OID Tree Construction
     tree = []
     count = 0
     problems = 0
@@ -498,9 +525,10 @@ def main(args):
     for line in Lines:
         count += 1
         try:
-            tree.append(get_tree_dict(line))
+            if not line.startswith("#"):
+                tree.append(get_tree_dict(line))
         except Exception as e:
-            logging.info(f"Problem: {e} while importing this line: {line}".strip())
+            logging.warning(f"Problem: {e} while importing this line: {line}".strip())
             problems += 1
 
     logging.info(f'Loaded mimic file. problems: {problems}, total reviewed: {count}, tree size: {len(tree)}')
@@ -681,13 +709,46 @@ def main(args):
 
 if __name__ == '__main__':
     logging.info("OIDrage by Patrick Scott Best")
-    parser = argparse.ArgumentParser(description='OIDrage SNMPd Mimic Server')
-    parser.add_argument('-f', '--inputfile', type=str, help="Input file. [mimic.txt]", default="mimic.txt")
-    parser.add_argument('-i', '--ipaddress', type=str, help="IP Address.  [127.0.0.1]", default="10.0.1.124")
-    parser.add_argument('-p', '--port', type=int, help="UDP port number to bind to. [5005]", default=5005)
-    parser.add_argument('-d', '--delay', type=int, help="Response delay, in milliseconds.  [0]", default=0)
-    parser.add_argument('-c', '--community', type=str, help="Require a specific community string from client. [*]")
-    sys.exit(main(parser.parse_args()))
-else: 
+    parser = argparse.ArgumentParser(description='OIDrage SNMPd Mimic Server by Patrick Scott Best')
+    # defaults set in main after ENV eval
+    parser.add_argument('-f', '--inputfile', type=str, help="Input file. [mimic.txt]", default=None)
+    parser.add_argument('-i', '--ipaddress', type=str, help="IP Address.  [127.0.0.1]", default=None)
+    parser.add_argument('-p', '--port', type=int, help="UDP port number to bind to. [5005]", default=None)
+    parser.add_argument('-d', '--delay', type=int, help="Response delay, in milliseconds.  [0]", default=None)
+    parser.add_argument('-c', '--community', type=str, help="Require a specific community string from client. [*]", default=None)
+    parser.add_argument('-D', '--debug', type=bool, help="Debug", default=None)
+
+    args = parser.parse_args()
+
+    required_community = False
+    DEBUG = False
+
+    # cli priority, then ENV, then default
+    if args.debug is None:
+        args.debug = os.getenv("DEBUG", default=None)
+        if args.debug is None:
+            DEBUG = False
+            logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+        else:
+            DEBUG = True
+            logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+    else:
+        DEBUG = True
+        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+
+    if DEBUG:
+        logging.debug("DEBUG is enabled.")
+
+    if args.community is None:
+        args.community = os.getenv('COMMUNITY', default=None)
+        if args.community is None:
+            #  bool quicker to eval
+            required_community = False
+        else:
+            required_community = True
+    logging.info(f'Community string required? {required_community}')
+
+    sys.exit(main(args))
+else:
     logging.error("OIDrage must be called from command line.")
     raise Exception("OIDrage must be called from command line.")

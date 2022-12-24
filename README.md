@@ -1,12 +1,7 @@
 # OIDrage
-A lightweight SNMPv2c server for testing purposes.  Sends mimic responses of test data based on any snmpwalk.  Designed to scale.
+A lightweight SNMPv2c server for testing purposes.  Sends mimic responses of test data based on any snmpwalk output.  Designed to scale.
 
 ![OIDrage Logo](logo/png/logo-no-background.png?raw=true "OIDrage Logo")
-
-# Updates
-- 20221208 - Initiate Project - Complimentery to https://github.com/patrickscottbest/hammerOID
-- 20221218 - Ready for walks and for individual gets, new logo.
-- 20221221 - Ready for bulk.  Tested against Cacti.
 
 # About OIDrage
 A lightweight SNMPv2c setup to mimic thousands of datapoints for testing any snmp scraper, for example, a real cacti installation or a cli snmp transaction.  
@@ -18,26 +13,65 @@ The usual PySNMP libraries are not used.  This software is stand-alone and requi
 The input file is a valid snmpwalk output (numerical).  
 Either provide your own mimic.txt using "snmpwalk -v2c -c public -On 127.0.0.1 .1 > mimic.txt", or just use the default provided.
 
-By default, any community string will work.  Alternatively, one can be set as required.
+By default, any community string will work.  Alternatively, one can be set and will be required.
 
 # Configuration
-Allows various configuration inputs.  Until command line syntax available, use variables top of OIDrage.py.
-- specify mimic-file, or use included.
-- response delay (in ms, default 0, recommended 100 for WAN emulation)
-- Interface - (defualt lo at 127.0.0.1)
-- UDP Port (default 161)
+
+Can be configured via the command line (priority), or by environment variables.
+
+## Command Line
 
 For complete features, run "python3 OIDrage.py -h"
 
+```
+usage: OIDrage.py [-h] [-f INPUTFILE] [-i IPADDRESS] [-p PORT] [-d DELAY]
+                  [-c COMMUNITY] [-D DEBUG]
+
+OIDrage SNMPd Mimic Server by Patrick Scott Best
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -f INPUTFILE, --inputfile INPUTFILE
+                        Input file. [mimic.txt]
+  -i IPADDRESS, --ipaddress IPADDRESS
+                        IP Address. [127.0.0.1]
+  -p PORT, --port PORT  UDP port number to bind to. [5005]
+  -d DELAY, --delay DELAY
+                        Response delay, in milliseconds. [0]
+  -c COMMUNITY, --community COMMUNITY
+                        Require a specific community string from client. [*]
+  -D DEBUG, --debug DEBUG
+                        Debug
+```
+
+## Environment Variables
+
+Makes this suitable for containerisation. 
+
+- INPUTFILE
+- IPADDRESS
+- PORT
+- DELAY
+- COMMUNITY
+- DEBUG  (presence, set to anything)
+
+
 # Implementation
+
 Create a mimic tree using an snmpwalk or use the included default (a linux system)
 Python script can run on a singular host, default binding to 127.0.0.1 on standard port 161.
 Values returned are static.
 A python script designed to make use of raw UDP port message and answer .
 
+# Updates
+- 20221208 - Initiate Project - Complimentery to https://github.com/patrickscottbest/hammerOID
+- 20221218 - Ready for walks and for individual gets, new logo.
+- 20221221 - Ready for bulk.  Tested against Cacti.
+- 20221224 - Opaque float added.
+
+
 # Future
-Command line arguments.
-Accomodate bulk-requests.
+
 "Wiggle" of common parameters (cpu / mem / interface).
 Custom hostnames per instance.
 Timeticks will move upwards.
@@ -50,6 +84,7 @@ https://www.rfc-editor.org/rfc/rfc1902.html#section-7.1.1
 
 Curses upon you, ITU-T X.690 ANS.1 (Abstract Syntax Notation 1) BER (Basic Encoding Rules)
 https://www.itu.int/ITU-T/studygroups/com17/languages/X.690-0207.pdf
+
 
 
 ## Encoding Notes
@@ -66,6 +101,8 @@ OIDs are variable-length and there is a flag and mathematical formula used to ca
 Not only are the OID nodes themselves encoded with variable length, but the placeholders/positions in the bytes response for "bytes to follow" (eg, bytes length) also need to be accomodated with the same encoding scheme.
 
 I've also discovered that OID values that are Integer32 have some kind of unique calculation performed. 0xFF is -1 in decimal.  0x0400 is 1024decimal.  0x01 is 1 decimal.
+
+Opaque type OID values are typically IEEE 754 32-bit floats.  It was really hard to find a standalone example of conversion.
 
 
 ## OID implementation
