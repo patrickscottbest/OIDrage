@@ -15,6 +15,8 @@ Either provide your own mimic.txt using "snmpwalk -v2c -c public -On 127.0.0.1 .
 
 By default, any community string will work.  Alternatively, one can be set and will be required.
 
+<a href="https://www.buymeacoffee.com/pbest"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=pbest&button_colour=40DCA5&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00" /></a>
+
 # Configuration
 
 Can be configured via the command line (priority), or by environment variables.
