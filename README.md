@@ -4,20 +4,44 @@ A lightweight SNMPv2c server for testing purposes.  Sends mimic responses of tes
 ![OIDrage Logo](logo/png/logo-no-background.png?raw=true "OIDrage Logo")
 
 # About OIDrage
-A lightweight SNMPv2c setup to mimic thousands of datapoints for testing any snmp scraper, for example, a real cacti installation or a cli snmp transaction.  
+A lightweight SNMPv2c setup to mimic an entire MIB tree of datapoints.  Can be easily spawned over and over to replicate thousands of live machines.  Use as a standalone python script, or deploy as a container from dockerhub using oidrage:latest.
 
-This software is designed to be raw, quick, and not feature-bloated.  It can mimic machines for load testing and KPI evaluations.  
+This software is designed to be raw, quick, and not feature-bloated.  It can mimic existing snmp mibs for load testing and metrics-gathering-platforms evaluation.  
+For example, a real cacti installation or a cli snmp transaction against multiple auto-discoverable targets. 
 
-The usual PySNMP libraries are not used.  This software is stand-alone and requires Python 3.3+ for IP address module support.
+No library dependencies.  It is stand-alone and requires Python 3.3+ for IP address module support.  The usual PySNMP libraries is not required, in fact, there is no requirements.txt. 
 
 The input file is a valid snmpwalk output (numerical).  
 Either provide your own mimic.txt using "snmpwalk -v2c -c public -On 127.0.0.1 .1 > mimic.txt", or just use the default provided.
 
 By default, any community string will work.  Alternatively, one can be set and will be required.
 
-# Configuration
+# How to Run
 
-Can be configured via the command line (priority), or by environment variables.
+A number of ways to use and scale.
+
+1.  Python
+
+Download the source code and run manually from the command line, any OS: 
+```
+python3 ./OIDrage.py --help
+```
+
+
+2. DockerHub
+
+Call the oidrage:latest image to use the latest docker image at [DockerHub](https://hub.docker.com/repository/docker/patrickscottbest/oidrage):
+
+```
+docker run --name OIDrageTEST --env COMMUNITY=private -p 5005:161 oidrage:latest  
+```
+
+
+# Options
+
+By default, no options are required, optional configurations are as below.
+
+OIDrage can be configured via the command line (priority), or by environment variables.
 
 ## Command Line
 
@@ -35,7 +59,7 @@ optional arguments:
                         Input file. [mimic.txt]
   -i IPADDRESS, --ipaddress IPADDRESS
                         IP Address. [127.0.0.1]
-  -p PORT, --port PORT  UDP port number to bind to. [5005]
+  -p PORT, --port PORT  UDP port number to bind to. [161]
   -d DELAY, --delay DELAY
                         Response delay, in milliseconds. [0]
   -c COMMUNITY, --community COMMUNITY
@@ -64,27 +88,56 @@ Values returned are static.
 A python script designed to make use of raw UDP port message and answer .
 
 # Updates
+
 - 20221208 - Initiate Project - Complimentery to https://github.com/patrickscottbest/hammerOID
 - 20221218 - Ready for walks and for individual gets, new logo.
 - 20221221 - Ready for bulk.  Tested against Cacti.
 - 20221224 - Opaque float added.
+- 20221229 - Ready for first release.
 
 
 # Future
 
-"Wiggle" of common parameters (cpu / mem / interface).
-Custom hostnames per instance.
-Timeticks will move upwards.
+- "Wiggle" of common parameters (cpu / mem / interface).  This will be accomplished with threading and a shared dictionary class.
+- Custom hostnames per instance.
+- Timeticks will move upwards.
+
+
+# Contributing
+
+I would love you to contribute to OIDrage, pull requests are welcome!  
+
+Besides feature coding, I could also use a hand with our SNMPwalk collection.
+
+We are always happy to see examples of SNMPwalk outputs from various devices:
+
+- routers
+- switches
+- IoT devices
+- Various computer types
+- Toasters ???
 
 
 # Notes 
 
-OID Types
-https://www.rfc-editor.org/rfc/rfc1902.html#section-7.1.1
+## Web Resources
 
-Curses upon you, ITU-T X.690 ANS.1 (Abstract Syntax Notation 1) BER (Basic Encoding Rules)
-https://www.itu.int/ITU-T/studygroups/com17/languages/X.690-0207.pdf
+OID Types found in [RFC 1902](https://www.rfc-editor.org/rfc/rfc1902.html#section-7.1.1)
 
+Curses upon you, ITU-T X.690 ANS.1 (Abstract Syntax Notation 1) BER (Basic Encoding Rules) at [ITU](https://www.itu.int/ITU-T/studygroups/com17/languages/X.690-0207.pdf)
+
+Python Argparse Tutorial by [Sam Starkman's Medium](https://sestarkman.medium.com/?source=---two_column_layout_sidebar----------------------------------) and [Toward Data Science](
+https://towardsdatascience.com/a-simple-guide-to-command-line-arguments-with-argparse-6824c30ab1c3)
+Argparse syntax [python docs](https://docs.python.org/3/library/argparse.html)
+Argparse tutorial [python docs](https://docs.python.org/3/howto/argparse.html)
+
+Getbulk explanations at [net-snmp](https://net-snmp.sourceforge.io/wiki/index.php/GETBULK#:~:text=non%2Drepeaters,max%2Drepetitions) and [web-nms](https://www.webnms.com/snmp/help/snmpapi/snmpv3/snmp_operations/snmp_getbulk.html)
+
+Setting Environment variables in vscode with a [great stackoverflow response](https://stackoverflow.com/questions/64944122/use-environment-variables-in-vscode)
+VS Code python environments overview [visual studio](https://code.visualstudio.com/docs/python/environments#_python-environments)
+VS Code suppress certain PEP8 warnings [stackoverflow response](https://stackoverflow.com/questions/40831593/visual-studio-code-suppress-pep8-warnings)
+
+Best description of OPAQUE Float values [stackoverflow response](https://stackoverflow.com/questions/35276556/snmpsharpnet-opaque-float)
 
 
 ## Encoding Notes

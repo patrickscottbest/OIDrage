@@ -509,7 +509,7 @@ def main(args):
     if args.ipaddress is None:
         args.ipaddress = os.getenv("IPADDRESS", default="127.0.0.1")
     if args.port is None:
-        args.port = os.getenv("PORT", default=5005)
+        args.port = os.getenv("PORT", default=161)
     if args.delay is None:
         args.delay = os.getenv("DELAY", default=0)
 
@@ -713,7 +713,7 @@ if __name__ == '__main__':
     # defaults set in main after ENV eval
     parser.add_argument('-f', '--inputfile', type=str, help="Input file. [mimic.txt]", default=None)
     parser.add_argument('-i', '--ipaddress', type=str, help="IP Address.  [127.0.0.1]", default=None)
-    parser.add_argument('-p', '--port', type=int, help="UDP port number to bind to. [5005]", default=None)
+    parser.add_argument('-p', '--port', type=int, help="UDP port number to bind to. [161]", default=None)
     parser.add_argument('-d', '--delay', type=int, help="Response delay, in milliseconds.  [0]", default=None)
     parser.add_argument('-c', '--community', type=str, help="Require a specific community string from client. [*]", default=None)
     parser.add_argument('-D', '--debug', type=bool, help="Debug", default=None)
