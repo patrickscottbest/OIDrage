@@ -3,8 +3,11 @@ A lightweight SNMPv2c server for testing purposes.  Sends mimic responses of tes
 
 ![OIDrage Logo](logo/png/logo-no-background.png?raw=true "OIDrage Logo")
 
+
 # About OIDrage
 A lightweight SNMPv2c setup to mimic an entire MIB tree of datapoints.  Can be easily spawned over and over to replicate thousands of live machines.  Use as a standalone python script, or deploy as a container from dockerhub using oidrage:latest.
+
+[Project page at GitHub](https://github.com/patrickscottbest/OIDrage)
 
 This software is designed to be raw, quick, and not feature-bloated.  It can mimic existing snmp mibs for load testing and metrics-gathering-platforms evaluation.  
 For example, a real cacti installation or a cli snmp transaction against multiple auto-discoverable targets. 
