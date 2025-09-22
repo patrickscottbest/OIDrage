@@ -237,7 +237,7 @@ def assemble_oid_package(oid_hex, oid_type, oid_value):
     return oid_package
 
 
-def formulate_get_response(request_id, community, oid_package):
+def formulate_get_response(request_version, request_id, community, oid_package):
     # returns a prepared byte object for a non-final response to an SNMPwalk
 
     # LENGTHS ###
@@ -299,7 +299,7 @@ def formulate_get_response(request_id, community, oid_package):
 
     datafill.append(0x02)  # demarc, version
     datafill.append(0x01)  # demarc, length 01
-    datafill.append(0x01)  # demarc, version 01
+    datafill.append(request_version)  # demarc, version 00/01
 
     datafill.append(0x04)  # community demarc 04
     datafill.append(length_community)  # usually one byte, length to end of community string, ie. 0x06 for public
@@ -357,6 +357,8 @@ def extract_request_details(data):
 
         request_type = get_request_type(data)
 
+        request_version = data[4]
+
         # Community string
         if data[5] == 4:  # demarc for community
             comm_length = data[6]
@@ -408,7 +410,8 @@ def extract_request_details(data):
             request_id,
             request_type,
             oid_requested,
-            max_repetitions
+            max_repetitions,
+            request_version
         )
 
     except Exception as e:
@@ -559,7 +562,7 @@ def main(args):
                 pass
 
             # Extract the artifacts we may need to construct a response
-            community, request_id, request_type, oid_requested, max_repetitions = extract_request_details(data)
+            community, request_id, request_type, oid_requested, max_repetitions, request_version = extract_request_details(data)
 
             # See if mandatory community string was set.
             if required_community:
@@ -577,13 +580,13 @@ def main(args):
                 found, tree_cursor = find_direct_match(tree, oid_requested)
 
                 if found:
-                    datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])
+                    datafill = formulate_get_response(request_version, request_id, community, tree[tree_cursor]['oid_package'])
                     if DEBUG:
                         logging.debug(f"Formulating Valid Response based on element {tree_cursor} {tree[tree_cursor]}")
                 else:
                     if DEBUG: logging.debug("Formulating NO SUCH OBJECT")
                     noSuchObject_oid_package = assemble_oid_package(oid_requested,'noSuchObject', '')
-                    datafill = formulate_get_response(request_id, community, noSuchObject_oid_package)
+                    datafill = formulate_get_response(request_version, request_id, community, noSuchObject_oid_package)
 
                 sleep(args.delay * 0.001)  # configurable
                 sock.sendto(datafill, addr)
@@ -610,27 +613,27 @@ def main(args):
                     if ((tree_cursor) < len(tree)):
                         if DEBUG:
                             logging.debug(f"Formulating Response based on next element {tree_cursor} {tree[tree_cursor]}")
-                        datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])                   
+                        datafill = formulate_get_response(request_version, request_id, community, tree[tree_cursor]['oid_package'])
                     else:
                         # next record would be beyond the MIB
                         if DEBUG:
                             logging.debug("Formulating endOfMibView")
                         # denote end of MIB by using the requested OID, and a value fill of 0x82 0x00
                         endOfMibView_oid_package = assemble_oid_package(oid_requested, 'endOfMibView', '')
-                        datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
+                        datafill = formulate_get_response(request_version, request_id, community, endOfMibView_oid_package)
                 else:
                     # a direct match does not exist, let's find the closest.
 
                     found, tree_cursor = find_closest_match(tree, oid_requested)
 
                     if found:
-                        datafill = formulate_get_response(request_id, community, tree[tree_cursor]['oid_package'])
+                        datafill = formulate_get_response(request_version, request_id, community, tree[tree_cursor]['oid_package'])
                     else:
                         # at the end of the search.
                         # respond with a specially crafted endOfMibView packet.
                         # repeat back the query with data 0x82 with 0x00 length
                         endOfMibView_oid_package = assemble_oid_package(oid_requested, 'endOfMibView', '')
-                        datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
+                        datafill = formulate_get_response(request_version, request_id, community, endOfMibView_oid_package)
 
                 # Sending a reply to client
                 sleep(args.delay * 0.001)  # configurable
@@ -663,13 +666,13 @@ def main(args):
                         for rep in range(0, max_repetitions):
                             rep_oid_package.extend(
                                 tree[tree_cursor + rep]['oid_package'])
-                        datafill = formulate_get_response(request_id, community, rep_oid_package)
+                        datafill = formulate_get_response(request_version, request_id, community, rep_oid_package)
                     else: 
                         # next record would be beyond the MIB
                         if DEBUG: logging.debug("Formulating endOfMibView")
                         # denote end of MIB by using the requested OID, and a value fill of 0x82 0x00
                         endOfMibView_oid_package = assemble_oid_package(oid_requested,'endOfMibView', '')
-                        datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
+                        datafill = formulate_get_response(request_version, request_id, community, endOfMibView_oid_package)
                 else:
                     # a direct match does not exist, let's find the closest.
 
@@ -688,13 +691,13 @@ def main(args):
                             else:
                                 rep_oid_package.extend(
                                     tree[tree_cursor + rep]['oid_package'])
-                        datafill = formulate_get_response(request_id, community, rep_oid_package)
+                        datafill = formulate_get_response(request_version, request_id, community, rep_oid_package)
 
                     else:
                         # we are at the end of the search.  Time to send back a specially crafted endOfMibView packet. 
                         # essentially repeating back the query with data 0x82 with 0x00 length
                         endOfMibView_oid_package = assemble_oid_package(oid_requested,'endOfMibView', '')
-                        datafill = formulate_get_response(request_id, community, endOfMibView_oid_package)
+                        datafill = formulate_get_response(request_version, request_id, community, endOfMibView_oid_package)
 
                 # Sending a reply to client
                 sleep(args.delay * 0.001)  # configurable
