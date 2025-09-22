@@ -21,7 +21,6 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.1
 
 
 def print_hex_nicely(data):
-
     # a nice debug way to print out HEX
     # similar to wireshark packet bytes
 
@@ -268,7 +267,7 @@ def formulate_get_response(request_id, community, oid_package):
 
     running_total += 6  # error overhead
 
-    running_total += 4  # request ID , always 4 bytes
+    running_total += len(request_id)  # request ID
     running_total += 2  # request ID preamble 0x0204
 
     length_to_end1_response = running_total
@@ -372,15 +371,16 @@ def extract_request_details(data):
         # Request ID
         cursor = 6 + comm_length + 5
 
-        request_id = bytearray(4)
-        for i in range(0, 4):
+        request_id_length = data[cursor - 1]
+        request_id = bytearray(request_id_length)
+        for i in range(0, request_id_length):
             request_id[i] = data[cursor + i]
         if DEBUG:
             logging.debug(f'Request ID: {int.from_bytes(request_id, "big")}')
             print_hex_nicely(request_id)
 
         # advance beyond the request_id
-        cursor += 4
+        cursor += request_id_length
 
         # advance cursor to position for max_repetitions
         cursor += 5
@@ -442,7 +442,7 @@ def find_closest_match(tree, oid_requested):
         logging.debug('Find closest match.')
 
     len_oid_requested = len(oid_requested)
-    
+
     found = False
     tree_cursor = 0
 
@@ -477,14 +477,14 @@ def find_closest_match(tree, oid_requested):
                 pass
 
     if DEBUG:
-        logging.debug(f'found: {found}, cursor: {tree_cursor}')      
+        logging.debug(f'found: {found}, cursor: {tree_cursor}')
 
     return found, tree_cursor
 
 
 def find_direct_match(tree, oid_requested):
     # Direct Match Shortcut
-    
+
     found = False
     tree_cursor = 0
 
