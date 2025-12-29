@@ -5,7 +5,7 @@
 # Uses a snmpwalk text output to mimic an SNMP target.
 
 
-from time import sleep
+from time import sleep, time
 import socket
 import os
 import asn1.asn1 as asn1
@@ -16,9 +16,6 @@ import logging
 from ieee754 import IEEE754
 
 encoder = asn1.Encoder()
-
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
-
 
 def print_hex_nicely(data):
     # a nice debug way to print out HEX
@@ -542,13 +539,21 @@ def main(args):
     sock.bind((args.ipaddress, args.port))
     logging.info(f"Socket opened.  Listening {args.ipaddress} port {args.port}")
 
+    last_activity_log_time = 0
+
     # Listen for a request and respond.
 
     while True:
         try:
             data, addr = sock.recvfrom(1460)  # buffer size is 1024 bytes
+            # Log activity if it has been quiet for a while
+            current_time = time()
+            if current_time - last_activity_log_time > 5:  # 5 second cooldown
+                logging.info(f"Request received from {addr[0]}:{addr[1]}")
+                last_activity_log_time = current_time
         except Exception as e:
             logging.warning(f'Problem with socket: {e}')
+            continue
 
         logging.debug("RECEIVED MESSAGE")
 
@@ -711,7 +716,6 @@ def main(args):
 
 
 if __name__ == '__main__':
-    logging.info("OIDrage by Patrick Scott Best")
     parser = argparse.ArgumentParser(description='OIDrage SNMPd Mimic Server by Patrick Scott Best')
     # defaults set in main after ENV eval
     parser.add_argument('-f', '--inputfile', type=str, help="Input file. [mimic.txt]", default=None)
@@ -719,28 +723,25 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--port', type=int, help="UDP port number to bind to. [161]", default=None)
     parser.add_argument('-d', '--delay', type=int, help="Response delay, in milliseconds.  [0]", default=None)
     parser.add_argument('-c', '--community', type=str, help="Require a specific community string from client. [*]", default=None)
-    parser.add_argument('-D', '--debug', type=bool, help="Debug", default=None)
+    parser.add_argument('-D', '--debug', action='store_true', help="Debug")
 
     args = parser.parse_args()
 
-    required_community = False
     DEBUG = False
 
     # cli priority, then ENV, then default
-    if args.debug is None:
-        args.debug = os.getenv("DEBUG", default=None)
-        if args.debug is None:
-            DEBUG = False
-            logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
-        else:
-            DEBUG = True
-            logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
-    else:
+    if args.debug or os.getenv("DEBUG"):
         DEBUG = True
-        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
 
     if DEBUG:
+        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+    else:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+
+    logging.info("OIDrage by Patrick Scott Best")
+    if DEBUG:
         logging.debug("DEBUG is enabled.")
+    required_community = False
 
     if args.community is None:
         args.community = os.getenv('COMMUNITY', default=None)
@@ -749,6 +750,8 @@ if __name__ == '__main__':
             required_community = False
         else:
             required_community = True
+    else:
+        required_community = True
     logging.info(f'Community string required? {required_community}')
 
     sys.exit(main(args))

@@ -1,11 +1,11 @@
 # OIDrage
-A lightweight SNMPv2c server for testing purposes.  Sends mimic responses of test data based on any snmpwalk output.  Designed to scale.
+A lightweight SNMPv2c or v1 server for testing purposes.  Sends mimic responses of test data based on any snmpwalk output.  Designed to scale.
 
 ![OIDrage Logo](logo/png/logo-no-background.png?raw=true "OIDrage Logo")
 
 
 # About OIDrage
-A lightweight SNMPv2c setup to mimic an entire MIB tree of datapoints.  Can be easily spawned over and over to replicate thousands of live machines.  Use as a standalone python script, or deploy as a container.
+A lightweight SNMPv2c or SNMPv1 setup to mimic an entire MIB tree of datapoints.  Can be easily spawned over and over to replicate thousands of live machines.  Use as a standalone python script, or deploy as a container.
 
 [Project page at GitHub](https://github.com/patrickscottbest/OIDrage)
 
@@ -48,6 +48,8 @@ docker run --name OIDrageTEST --env COMMUNITY=private -p 5005:161 oidrage:latest
 
 By default, no options are required, optional configurations are as below.
 
+Debug mode is off by default. To enable it, use the `-D` or `--debug` command-line flags with any value, or set the `DEBUG` environment variable.
+
 OIDrage can be configured via the command line (priority), or by environment variables.
 
 ## Command Line
@@ -84,7 +86,7 @@ Makes this suitable for containerisation.
 - PORT
 - DELAY
 - COMMUNITY
-- DEBUG  (presence, set to anything)
+- DEBUG: Enables debug mode if set to any value.
 
 
 # Implementation
@@ -101,6 +103,7 @@ A python script designed to make use of raw UDP port message and answer .
 - 20221221 - Ready for bulk.  Tested against Cacti.
 - 20221224 - Opaque float added.
 - 20221229 - Ready for first release.
+- 20250922 - Contribution by @idstam  (Johan Idstam) to enable serving snmp V1.
 
 
 # Future
@@ -199,4 +202,3 @@ Found in https://github.com/wireshark/wireshark/blob/master/epan/oids.c#L1115
 			case 2: *(b++) = ((subid & 0x00003F80) >> 7)  | 0x80;
 			/* FALL THROUGH */
 			case 1: *(b++) =   subid & 0x0000007F ; break;
-
