@@ -19,7 +19,8 @@ No library dependencies.  It is stand-alone and requires Python 3.3+ for IP addr
 The input file is a valid snmpwalk output (numerical).  
 Either provide your own mimic.txt using "snmpwalk -v2c -c public -On 127.0.0.1 .1 > mimic.txt", or just use the default provided.
 
-By default, any community string will work.  Alternatively, one can be set and will be required.
+On loopback (`127.0.0.1`), any community string is accepted unless you set one.  
+**Non-loopback binds (including Docker `0.0.0.0`) require `-c` / `COMMUNITY`** — the process refuses to start without one.
 
 <a href="https://www.buymeacoffee.com/pbest"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=pbest&button_colour=40DCA5&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00" /></a>
 
@@ -40,8 +41,13 @@ python3 ./OIDrage.py --help
 Call the oidrage:latest image to use the latest docker image at [DockerHub](https://hub.docker.com/repository/docker/patrickscottbest/oidrage):
 
 ```
-docker run --name OIDrageTEST --env COMMUNITY=private -p 5005:161 oidrage:latest  
+docker run --name OIDrageTEST \
+  --env COMMUNITY=private \
+  -p 1161:1161/udp \
+  oidrage:latest
 ```
+
+The image listens on **UDP 1161** as non-root (`IPADDRESS=0.0.0.0`). Always publish with `/udp` and set `COMMUNITY`.
 
 
 # Options
@@ -68,7 +74,7 @@ optional arguments:
                         Input file. [mimic.txt]
   -i IPADDRESS, --ipaddress IPADDRESS
                         IP Address. [127.0.0.1]
-  -p PORT, --port PORT  UDP port number to bind to. [161]
+  -p PORT, --port PORT  UDP port number to bind to. [161 locally; image default 1161]
   -d DELAY, --delay DELAY
                         Response delay, in milliseconds. [0]
   -c COMMUNITY, --community COMMUNITY
@@ -88,13 +94,30 @@ Makes this suitable for containerisation.
 - COMMUNITY
 - DEBUG: Enables debug mode if set to any value.
 
+## Security notes
+
+- Prefer loopback for local demos; require `COMMUNITY` for any shared/LAN bind.
+- GetBulk `max_repetitions` is clamped and response size is capped.
+- Do not expose UDP SNMP to the public internet.
+- Community strings are not written to debug logs.
+
+## Tests
+
+Stdlib only (no pytest):
+
+```
+python -m unittest discover -s tests -v
+```
+
 
 # Implementation
 
 Create a mimic tree using an snmpwalk or use the included default (a linux system)
 Python script can run on a singular host, default binding to 127.0.0.1 on standard port 161.
 Values returned are static.
-A python script designed to make use of raw UDP port message and answer .
+A python script designed to make use of raw UDP port message and answer.
+
+Container image defaults differ from local CLI: bind `0.0.0.0:1161/udp` as non-root; **`COMMUNITY` is required** for that bind. Publish with `-p host:1161/udp`.
 
 # Updates
 
@@ -104,6 +127,7 @@ A python script designed to make use of raw UDP port message and answer .
 - 20221224 - Opaque float added.
 - 20221229 - Ready for first release.
 - 20250922 - Contribution by @idstam  (Johan Idstam) to enable serving snmp V1.
+- 20261120 - Security hardening: bounded SNMP parse, GetBulk size/repetition caps, non-loopback requires `COMMUNITY`, mimic file size limits, env `PORT`/`DELAY` coercion, community redacted from logs. Docker runs non-root on UDP **1161** with `IPADDRESS=0.0.0.0` (set `COMMUNITY`). Stdlib unit + UDP smoke tests: `python -m unittest discover -s tests -v`.
 
 
 # Future
