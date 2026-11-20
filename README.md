@@ -44,11 +44,12 @@ Call the oidrage:latest image to use the latest docker image at [DockerHub](http
 docker run --name OIDrageTEST \
   --env COMMUNITY=private \
   -p 1161:1161/udp \
-  oidrage:latest
+  patrickscottbest/oidrage:latest
 ```
 
-The image listens on **UDP 1161** as non-root (`IPADDRESS=0.0.0.0`). Always publish with `/udp` and set `COMMUNITY`.
+The image listens on **UDP 1161** as non-root (`IPADDRESS=0.0.0.0`), based on `python:3.12-slim`. Always publish with `/udp` and set `COMMUNITY`.
 
+Images are rebuilt on relevant `main` pushes via GitHub Actions (`latest`, `YYYYMMDD`, and `sha-…` tags). Requires repo secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`.
 
 # Options
 
@@ -128,6 +129,7 @@ Container image defaults differ from local CLI: bind `0.0.0.0:1161/udp` as non-r
 - 20221229 - Ready for first release.
 - 20250922 - Contribution by @idstam  (Johan Idstam) to enable serving snmp V1.
 - 20261120 - Security hardening: bounded SNMP parse, GetBulk size/repetition caps, non-loopback requires `COMMUNITY`, mimic file size limits, env `PORT`/`DELAY` coercion, community redacted from logs. Docker runs non-root on UDP **1161** with `IPADDRESS=0.0.0.0` (set `COMMUNITY`). Stdlib unit + UDP smoke tests: `python -m unittest discover -s tests -v`.
+- 20261120 - Docker refresh: base image `python:3.12-slim`; GitHub Action publishes `patrickscottbest/oidrage` (`latest` / date / sha) on `main`.
 
 
 # Future
